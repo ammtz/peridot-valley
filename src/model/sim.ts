@@ -239,6 +239,14 @@ export class Sim {
     this.renaming = false;
     this.hireIndex++;
     this.afterHireStep();
+    this.fitViewAboveCard();
+  }
+  /** U9: after each hire, frame the new floors in the space above the intro card. */
+  fitViewAboveCard() {
+    if (typeof document === 'undefined') return;
+    const el = document.querySelector('[data-intro-card]');
+    const cardHeight = el ? el.getBoundingClientRect().height : 180;
+    this.fitView(cardHeight + 40, 1.1);
   }
   skipCurrent() {
     this.hireIndex++;

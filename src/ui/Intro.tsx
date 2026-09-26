@@ -123,7 +123,6 @@ function AddTeamCard({ sim }: { sim: Sim }) {
   const [val, setVal] = useState('');
   return (
     <div onClick={(e) => e.stopPropagation()}>
-      <div style={{ marginBottom: 10 }}>Want to add your own?</div>
       {sim.addTeamCount < 3 && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
           <input placeholder="name a team, e.g. TRAVEL" value={val} maxLength={14} onChange={(e) => setVal(e.target.value.toUpperCase())} style={inputStyle} />
@@ -168,7 +167,7 @@ export function Intro({ sim }: { sim: Sim }) {
       )}
 
       {phase !== 'sleep' && (
-        <div style={{ ...card, marginBottom: 100 }} onClick={tap}>
+        <div data-intro-card="true" style={{ ...card, marginBottom: 100 }} onClick={tap}>
           <div style={{ whiteSpace: 'pre-line' }}>{shown}</div>
           {done && phase === 'greet' && <AnswerButtons options={[['go', "Let's go"]]} onPick={() => sim.advanceGreet()} />}
           {done && phase === 'q1' && <AnswerButtons options={[['yes', 'Yes, ask me first'], ['no', 'No, just handle it']]} onPick={(v) => sim.answerQ1(v === 'yes')} />}
