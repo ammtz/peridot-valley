@@ -855,6 +855,12 @@ export class Sim {
     this.phoneMoodOpen = true;
     this.notify();
   }
+  /** U5: the primary-action pill always opens PIP's sheet, never toggles it closed. */
+  openPipNeeds() {
+    this.sel = { kind: 'sup', id: 'pip' };
+    this.popAt = NOW();
+    this.notify();
+  }
   closePhoneMood() {
     this.phoneMoodOpen = false;
     this.notify();
@@ -1860,7 +1866,8 @@ export class Sim {
         name: s.name,
         role: s.role,
         nameSize: prime ? 13 : 12,
-        hasBadge: prime && this.visibleNeeds().length > 0,
+        // U5: the bottom-center pill is the main "needs you" cue now, not a badge on PIP.
+        hasBadge: false,
         badge: this.visibleNeeds().length,
         badgeSc: 1 + 0.06 * Math.sin(t * 4),
         down: (e: React.PointerEvent) => this.nodeDown(e, 'sup', s.id),
@@ -1957,6 +1964,8 @@ export class Sim {
       openPhoneAdd: () => this.openPhoneAdd(),
       closePhoneAdd: () => this.closePhoneAdd(),
       placeFromSheet: (k: Furniture['type']) => this.placeFurnFromSheet(k),
+      needsCount: this.visibleNeeds().length,
+      openPipNeeds: () => this.openPipNeeds(),
       addTarget: tgt.name,
       addMgr: () => this.addManager(tgt.id),
       addTeam: () => this.addTeam(tgt.id),

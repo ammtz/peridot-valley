@@ -8,6 +8,7 @@ import { Feed } from './ui/Feed';
 import { Popup } from './ui/Popup';
 import { Intro } from './ui/Intro';
 import { Tour } from './ui/Tour';
+import { NeedsPill } from './ui/NeedsPill';
 
 export default function App() {
   const sim = useSim();
@@ -40,6 +41,7 @@ export default function App() {
         </div>
       )}
       {showFeed && <Feed rv={rv} />}
+      {full && <NeedsPill rv={rv} />}
       <Popup rv={rv} />
       <Intro sim={sim} />
       <Tour sim={sim} />
