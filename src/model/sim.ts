@@ -684,8 +684,15 @@ export class Sim {
   onUp(e: PointerEvent) {
     this.pts.delete(e.pointerId);
     if (this.pinch) {
-      if (this.pts.size < 2) this.pinch = null;
-      this.drag = null;
+      if (this.pts.size < 2) {
+        this.pinch = null;
+        if (this.pts.size === 1) {
+          const [rem] = [...this.pts.entries()];
+          this.drag = { kind: 'pan', sx: rem[1].x, sy: rem[1].y, ox: this.pan.x, oy: this.pan.y, moved: true };
+        } else {
+          this.drag = null;
+        }
+      }
       this.notify();
       return;
     }
