@@ -163,6 +163,22 @@ if (!MOBILE) {
   console.log('PIP popup shows NEEDS YOU:', (await feedText()).includes('NEEDS YOU'));
   await js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))"); await sleep(300);
 
+  // U13: open asks pinned at the top of the feed, ahead of the regular cards.
+  await js('window.__sim.showFeed = true; window.__sim.notify();'); await sleep(300);
+  await shot('t0-feed-quieter');
+  const feedInfo = await js(`(()=>{
+    const kids = [...document.querySelectorAll('[data-pinned-ask],[data-feed-card],[data-done-fold]')];
+    const firstNonAskIdx = kids.findIndex(k => !k.hasAttribute('data-pinned-ask'));
+    const asksFirst = firstNonAskIdx === -1 || kids.slice(0, firstNonAskIdx).length === document.querySelectorAll('[data-pinned-ask]').length;
+    return {
+      pinnedAsks: document.querySelectorAll('[data-pinned-ask]').length,
+      visibleNeeds: window.__sim.visibleNeeds().length,
+      doneRowsShown: document.querySelectorAll('[data-feed-card="DONE"]').length,
+      asksFirst,
+    };
+  })()`);
+  console.log('U13 asks pinned first, at most 1 DONE row:', feedInfo.pinnedAsks === feedInfo.visibleNeeds && feedInfo.doneRowsShown <= 1 && feedInfo.asksFirst, JSON.stringify(feedInfo));
+
   // The scripted first minute: wait for BILLS to get stuck, fix it, check the recap.
   await sleep(16000);
   console.log('story flagged BILLS stuck:', await js("!!(window.__sim.agent('money-bills') && window.__sim.agent('money-bills').blocked)"));

@@ -1086,7 +1086,8 @@ export class Sim {
     const stuck = inWindow.filter((e) => e.kind === 'stuck');
     const waiting = inWindow.filter((e) => e.kind === 'fear').length;
     const names = teams.map((T) => T.name).join(', ');
-    let text = ' — ' + REC_LABELS[optIdx] + ': ' + done + ' done';
+    // U13: "Last 10 min: ..." — capitalized, no leading dash.
+    let text = cap(REC_LABELS[optIdx]) + ': ' + done + ' done';
     if (stuck.length) text += ', ' + stuck.length + ' stuck (' + stuck[0].who + ': ' + stuck[0].text + ')';
     if (waiting) text += ', ' + waiting + ' waiting on you';
     text += '.';
@@ -1106,12 +1107,11 @@ export class Sim {
     a.recent = (a.recent || []).filter((x) => t - x < 35).concat([t]);
     if (a.recent.length >= 2) a.flowUntil = t + 16;
     T.fireAt = t;
-    const eq = (this.eqMap[T.id] || []).filter((F) => F.type !== 'rec');
-    const via = eq.length ? ' (via ' + eq.map((F) => FT[F.type].name).filter((v, j, arr) => arr.indexOf(v) === j).join(', ') + ')' : '';
+    // U13: drop "(via ...)" from the DONE card -- the equipment tag on the room label already says it.
     const P = this.pathPts(T.id);
     let len = 0;
     for (let j = 0; j < P.length - 1; j++) len += Math.hypot(P[j + 1][0] - P[j][0], P[j + 1][1] - P[j][1]);
-    this.pulses.push({ team: T.id, at: t, dur: cl(len / 420, 0.9, 2.4), card: ['DONE', this.pathName(T.id), a.name, doneText + via] });
+    this.pulses.push({ team: T.id, at: t, dur: cl(len / 420, 0.9, 2.4), card: ['DONE', this.pathName(T.id), a.name, doneText] });
     this.evLog.push({ t, team: T.id, kind: 'done', who: a.name, text: doneText });
     this.dirty = true;
   }
@@ -1134,6 +1134,14 @@ export class Sim {
   visibleNeeds(): Need[] {
     const t = NOW();
     return this.m.needs.filter((n) => !n.snoozeUntil || n.snoozeUntil <= t);
+  }
+  /** The open-asks row shape shared by PIP's popup and the feed's pinned-asks section (U13). */
+  needCards() {
+    return this.visibleNeeds().map((nd) => ({
+      path: this.pathName(nd.team),
+      text: nd.text,
+      acts: nd.acts.map(([label, action], i) => ({ label, bg: i === 0 ? '#15140f' : 'transparent', fg: i === 0 ? '#f4f3ee' : '#15140f', go: () => this.act(nd, action) })),
+    }));
   }
   /** PIP shows at most 3 open asks, and never two with the same text. Beyond that, an ask is dropped. */
   pushNeed(nd: Need) {
@@ -1466,11 +1474,7 @@ export class Sim {
         p.hasNeeds = true;
         p.needCount = vNeeds.length;
         p.noNeeds = vNeeds.length === 0;
-        p.needs = vNeeds.map((nd) => ({
-          path: this.pathName(nd.team),
-          text: nd.text,
-          acts: nd.acts.map(([label, action], i) => ({ label, bg: i === 0 ? '#15140f' : 'transparent', fg: i === 0 ? '#f4f3ee' : '#15140f', go: () => this.act(nd, action) })),
-        }));
+        p.needs = this.needCards();
         p.acts = [btn('+ MANAGER', () => this.addManager('pip'), 'primary'), btn('+ TEAM', () => this.addTeam('pip'))];
         p.hint = 'Everything your teams can’t decide alone lands here.';
       } else {
@@ -1920,7 +1924,7 @@ export class Sim {
 
     const nowMs = Date.now();
     const ago = (ms: number) => (ms < 10000 ? 'now' : ms < 60000 ? Math.floor(ms / 1000) + 's' : Math.floor(ms / 60000) + 'm');
-    const cards = m.feed.map((c) => {
+    const mkCard = (c: FeedCard) => {
       const pr = cl((nowMs - c.ts) / 500, 0, 1);
       const filled = c.kind !== 'DONE' && c.kind !== 'MOVED';
       const kc = c.kind === 'STUCK' ? '#d63c2f' : c.kind === 'ASKS' ? '#e8b923' : c.kind === 'HANDLED' ? '#3aa865' : null;
@@ -1936,7 +1940,12 @@ export class Sim {
         kbg: kc || (filled ? '#15140f' : 'transparent'),
         kfg: kc ? '#15140f' : filled ? '#f4f3ee' : '#15140f',
       };
-    });
+    };
+    // U13: a quieter feed — DONE cards fold into one expandable row instead of
+    // crowding out everything else, and the open asks are pinned above all of it.
+    const cards = m.feed.filter((c) => c.kind !== 'DONE').map(mkCard);
+    const doneCards = m.feed.filter((c) => c.kind === 'DONE').map(mkCard);
+    const pinnedAsks = this.needCards();
 
     const pop = sel ? this.buildPop(t, vw, vh) : null;
     const tgt = S[this.addTargetId()] || S.pip;
@@ -2035,6 +2044,9 @@ export class Sim {
       },
       liveOp: 0.5 + 0.5 * Math.abs(Math.sin(t * 2)),
       cards,
+      doneCards,
+      doneCount: doneCards.length,
+      pinnedAsks,
       hasPop: !!pop,
       pop: pop || {},
       closePop: () => {

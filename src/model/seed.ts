@@ -82,7 +82,7 @@ export function seed(): WorldModel {
   const feed: WorldModel['feed'] = [
     { id: 'f3', kind: 'DONE', path: 'OTTO › HOME', who: 'FIX', text: 'Scheduled the AC tune-up', ts: d - 60000 },
     { id: 'f2', kind: 'DONE', path: 'OTTO › MONEY', who: 'WATCH', text: 'Caught a double charge at the gas station', ts: d - 180000 },
-    { id: 'f1', kind: 'DONE', path: 'DASH › JOB HUNT', who: 'SCOUT', text: 'Found 12 new postings overnight (via DATA)', ts: d - 300000 },
+    { id: 'f1', kind: 'DONE', path: 'DASH › JOB HUNT', who: 'SCOUT', text: 'Found 12 new postings overnight', ts: d - 300000 },
   ];
   const furn: Furniture[] = [
     { id: 'fx-db', type: 'db', x: 300, y: 730, on: [true, true, false, false] },
