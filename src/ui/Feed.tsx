@@ -1,3 +1,5 @@
+const isPhone = () => typeof window !== 'undefined' && window.innerWidth <= 600;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function Feed({ rv }: { rv: any }) {
   if (rv.feedClosed) {
@@ -11,8 +13,12 @@ export function Feed({ rv }: { rv: any }) {
       </button>
     );
   }
+  const phone = isPhone();
+  const panelStyle: React.CSSProperties = phone
+    ? { position: 'fixed', left: 0, right: 0, bottom: 0, top: 'auto', width: '100%', maxHeight: '55vh', zIndex: 600, display: 'flex', flexDirection: 'column', background: '#f4f3ee', border: '3px solid #15140f', borderBottom: 'none', borderRadius: '20px 20px 0 0', boxShadow: '0 -8px 0 rgba(21,20,15,.1)', overflow: 'hidden', fontFamily: "'JetBrains Mono',monospace", color: '#15140f' }
+    : { position: 'fixed', right: 16, top: 16, bottom: 16, width: 340, maxWidth: 'calc(100vw - 32px)', zIndex: 600, display: 'flex', flexDirection: 'column', background: '#f4f3ee', border: '3px solid #15140f', borderRadius: 24, boxShadow: '0 12px 0 rgba(21,20,15,.1)', overflow: 'hidden', fontFamily: "'JetBrains Mono',monospace", color: '#15140f' };
   return (
-    <div style={{ position: 'fixed', right: 16, top: 16, bottom: 16, width: 340, maxWidth: 'calc(100vw - 32px)', zIndex: 600, display: 'flex', flexDirection: 'column', background: '#f4f3ee', border: '3px solid #15140f', borderRadius: 24, boxShadow: '0 12px 0 rgba(21,20,15,.1)', overflow: 'hidden', fontFamily: "'JetBrains Mono',monospace", color: '#15140f' }}>
+    <div data-bottom-sheet={phone ? 'true' : undefined} style={panelStyle}>
       <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 11, padding: '14px 16px 13px', background: '#fbfaf5', borderBottom: '2.5px solid #15140f' }}>
         <span style={{ width: 30, height: 30, background: '#15140f', borderRadius: 8, position: 'relative', flex: 'none' }}>
           <span style={{ position: 'absolute', left: 8, top: 11, width: 5, height: 6, background: '#f4f3ee', borderRadius: 1.5 }} />

@@ -1,15 +1,23 @@
+const isPhone = () => typeof window !== 'undefined' && window.innerWidth <= 600;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function Popup({ rv }: { rv: any }) {
   if (!rv.hasPop) return null;
   const pop = rv.pop;
-  return (
-    <div
-      style={{
+  const phone = isPhone();
+  const style: React.CSSProperties = phone
+    ? {
+        position: 'fixed', left: 0, right: 0, bottom: 0, top: 'auto', width: '100%', maxHeight: '55vh', overflow: 'auto', zIndex: 1000, background: '#fbfaf5',
+        border: '2.5px solid #15140f', borderBottom: 'none', borderRadius: '18px 18px 0 0', boxShadow: '0 -6px 0 rgba(21,20,15,.12)', opacity: pop.op,
+        fontFamily: "'JetBrains Mono',monospace", color: '#15140f',
+      }
+    : {
         position: 'fixed', left: pop.l, top: pop.t, width: 330, maxHeight: pop.maxH, overflow: 'auto', zIndex: 1000, background: '#fbfaf5',
         border: '2.5px solid #15140f', borderRadius: 16, boxShadow: '0 8px 0 rgba(21,20,15,.12)', opacity: pop.op,
         transform: `translateY(${pop.ty}px) scale(${pop.sc})`, transformOrigin: pop.origin, fontFamily: "'JetBrains Mono',monospace", color: '#15140f',
-      }}
-    >
+      };
+  return (
+    <div data-bottom-sheet={phone ? 'true' : undefined} style={style}>
       <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px 12px 16px', background: '#fbfaf5', borderBottom: '2px solid #15140f' }}>
         <span style={{ width: 26, height: 26, background: '#15140f', borderRadius: 7, position: 'relative', flex: 'none' }}>
           <span style={{ position: 'absolute', left: 7, top: 9, width: 4, height: 6, background: '#f4f3ee', borderRadius: 1 }} />
