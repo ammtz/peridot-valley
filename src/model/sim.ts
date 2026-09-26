@@ -371,6 +371,9 @@ export class Sim {
     this.m.onboarded = true;
     this.setSpeech("It's yours now. Drag anything, rename anything, hire more from the dock. I'll be up here.");
     this.dirty = true;
+    // Phone: the tour left the camera framed on its last stop. Refit so nothing
+    // sits clipped at the screen edge once the chrome (dock, feed) settles back in.
+    if (typeof window !== 'undefined' && window.innerWidth < 560) this.fitView();
     this.save();
     this.notify();
   }
@@ -1982,6 +1985,9 @@ export class Sim {
       pop: pop || {},
       closePop: () => {
         this.sel = null;
+        // Phone: the bottom sheet covers ~55% of the screen; closing it can reveal a
+        // team box sitting clipped at the edge from before the sheet opened.
+        if (typeof window !== 'undefined' && window.innerWidth < 560) this.fitView();
         this.notify();
       },
     };
