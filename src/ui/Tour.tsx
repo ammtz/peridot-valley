@@ -30,9 +30,6 @@ const nextBtn: React.CSSProperties = {
 
 const PAD = 12;
 
-function fromScreenRect(r: DOMRect): { l: number; t: number; w: number; h: number } {
-  return { l: r.left - PAD, t: r.top - PAD, w: r.width + PAD * 2, h: r.height + PAD * 2 };
-}
 function fromWorldBox(sim: Sim, x0: number, y0: number, x1: number, y1: number) {
   const a = { x: sim.pan.x + x0 * sim.zoom, y: sim.pan.y + y0 * sim.zoom };
   const b = { x: sim.pan.x + x1 * sim.zoom, y: sim.pan.y + y1 * sim.zoom };
@@ -61,28 +58,17 @@ function spotRect(sim: Sim): { l: number; t: number; w: number; h: number } {
     return fromWorldBox(sim, x0, y0, x1, y1);
   }
 
-  if (sim.tourStep === 1) {
-    // The stuck agent's floor — the sim already re-centered the camera on it.
-    const id = sim.tourBlockedAgentId;
-    const a = id ? sim.agent(id) : null;
-    const T = a ? sim.team(a.team) : null;
-    if (!T) return fallback;
-    const n = sim.members(T).length,
-      w = roomW(n),
-      h = roomH(n);
-    return fromWorldBox(sim, T.x - w / 2, T.y - h / 2 - 30, T.x + w / 2, T.y + h / 2);
-  }
-
-  if (sim.tourStep === 3) {
-    const el = document.querySelector('[data-dock-kind="rec"]');
-    if (el) return fromScreenRect(el.getBoundingClientRect());
-    return fallback;
-  }
-
-  // stop 2: the whole dock
-  const el = document.getElementById('dock-panel');
-  if (el) return fromScreenRect(el.getBoundingClientRect());
-  return fallback;
+  // stop 1: the stuck agent's floor — the sim already re-centered the camera on it.
+  // U14: this is the tour's last stop; tools and the recorder are taught by the
+  // phone "+" sheet's one-time tips instead of a third and fourth stop here.
+  const id = sim.tourBlockedAgentId;
+  const a = id ? sim.agent(id) : null;
+  const T = a ? sim.team(a.team) : null;
+  if (!T) return fallback;
+  const n = sim.members(T).length,
+    w = roomW(n),
+    h = roomH(n);
+  return fromWorldBox(sim, T.x - w / 2, T.y - h / 2 - 30, T.x + w / 2, T.y + h / 2);
 }
 
 export function Tour({ sim }: { sim: Sim }) {

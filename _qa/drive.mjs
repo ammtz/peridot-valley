@@ -96,25 +96,27 @@ await sleep(300);
 console.log('stop1 cleared after the fix:', !(await js('window.__sim.tourWaiting')));
 console.log('U3 sel cleared after stop1 fix (popup does not cover the tour):', await js('window.__sim.sel === null'));
 
-await js('window.__sim.tourNext()');
-await sleep(3000);
-// U2: on phone the dock is a single "+" button behind a sheet, not a TOOLS grid.
-console.log('dock visible at stop2:', MOBILE ? await js("!!document.getElementById('phone-add-btn')") : (await feedText()).includes('TOOLS'));
-await shot('o6-tour-stop2');
-await js("window.__sim.placeFurn('mcp', 400, 500)");
-console.log('tool-placed flag set:', await js('window.__sim.tourToolPlaced'));
-
-await js('window.__sim.tourNext()');
-await sleep(3000);
-await shot('o7-tour-stop3');
-await js("window.__sim.placeFurn('rec', 420, 560)");
-console.log('recorder-placed flag set:', await js('window.__sim.tourRecPlaced'));
-
+// U14: the tour is two stops now -- NEXT at stop 1 ends it directly, no tools/recorder stops.
 await js('window.__sim.tourNext()');
 await sleep(1000);
 console.log('onboarded after tour end:', await js('window.__sim.m.onboarded'));
 console.log('tourOn after end:', await js('window.__sim.tourOn'));
-console.log('dock + feed present at end:', (MOBILE ? await js("!!document.getElementById('phone-add-btn')") : (await feedText()).includes('TOOLS')) && (await feedText()).includes('PIP'));
+await shot('o6-tour-end');
+
+// U2/U14: the dock only shows post-tour now; on phone it is the "+" button and its
+// sheet carries one-time tips for tools and the recorder (no tour stop teaches them).
+console.log('dock present at end:', MOBILE ? await js("!!document.getElementById('phone-add-btn')") : (await feedText()).includes('TOOLS'));
+console.log('feed present at end:', (await feedText()).includes('PIP'));
+if (MOBILE) {
+  await js('window.__sim.openPhoneAdd()'); await sleep(300);
+  console.log('U14 tools tip shown on first + sheet open:', (await feedText()).includes('drop it near the team'));
+  console.log('U14 recorder tip shown on first + sheet open:', (await feedText()).includes('Watches a team'));
+  await js("window.__sim.placeFromSheet('mcp')"); await sleep(300);
+  console.log('tool placed from the + sheet:', await js("window.__sim.m.furn.some(f=>f.type==='mcp')"));
+  await js('window.__sim.openPhoneAdd()'); await sleep(300);
+  console.log('U14 tips do not repeat on a second + sheet open:', !(await feedText()).includes('drop it near the team'));
+  await js('window.__sim.closePhoneAdd()'); await sleep(200);
+}
 await shot('o8-end');
 const savedOnboarded = await js("JSON.parse(localStorage.getItem('the-system-live-v4')||'null')?.onboarded");
 console.log('onboarded persisted to storage:', savedOnboarded);

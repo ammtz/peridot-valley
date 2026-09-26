@@ -76,12 +76,16 @@ export class Sim {
   tourStepStart = 0;
   tourWaiting = false;
   tourBlockedAgentId: string | null = null;
-  tourToolPlaced = false;
-  tourRecPlaced = false;
   resetConfirm = false;
   // --- phone chrome (U2): the mood legend and the dock collapse into sheets ---
   phoneMoodOpen = false;
   phoneAddOpen = false;
+  // U14: the tour no longer teaches tools/the recorder -- each tip shows once,
+  // the first time the phone "+" sheet opens.
+  seenToolsTip = false;
+  seenRecorderTip = false;
+  showAddSheetToolsTip = false;
+  showAddSheetRecorderTip = false;
   evLog: { t: number; team: string; kind: 'done' | 'stuck' | 'fear'; who?: string; text?: string }[] = [];
   pan = { x: 0, y: 0 };
   zoom = 1;
@@ -307,15 +311,15 @@ export class Sim {
     this.tourStart();
   }
 
-  // --- the four-stop tour ---
+  // --- the two-stop tour (U14): the org overview, then the one fix. Tools and the
+  // recorder are no longer taught here -- their tips show once, the first time the
+  // phone "+" sheet opens (see openPhoneAdd()). Desktop's dock keeps its own hover tips.
   tourStart() {
     this.tourOn = true;
     this.tourStep = 0;
     this.tourStepStart = NOW();
     this.tourWaiting = false;
-    this.tourToolPlaced = false;
-    this.tourRecPlaced = false;
-    this.fitView(this.tourBottomInset(0), 1.15);
+    this.fitView(this.tourBottomInset(), 1.15);
     this.setSpeech('Everyone reports up. When someone finishes a job, it travels the lines to me, and I tell you.');
     this.forceCompletionForTour();
     this.notify();
@@ -330,16 +334,13 @@ export class Sim {
       this.makeBlocked(free);
       this.tourBlockedAgentId = free.id;
       this.tourWaiting = true;
-      this.centerOnTeam(free.team, this.tourBottomInset(1), 1.6);
+      this.centerOnTeam(free.team, this.tourBottomInset(), 1.6);
     } else {
       this.tourWaiting = false;
     }
   }
   tourCanNext(): boolean {
-    const elapsed = NOW() - this.tourStepStart;
     if (this.tourStep === 1) return !this.tourWaiting;
-    if (this.tourStep === 2) return this.tourToolPlaced || elapsed >= 12;
-    if (this.tourStep === 3) return this.tourRecPlaced || elapsed >= 12;
     return true;
   }
   tourNext() {
@@ -350,15 +351,6 @@ export class Sim {
       this.setSpeech('Colours are moods. Green is flow, orange is swamped, red means stuck. One of them is stuck right now. Tap them.');
       this.forceBlockForTour();
     } else if (this.tourStep === 1) {
-      this.tourEnterTools();
-    } else if (this.tourStep === 2) {
-      this.tourStep = 3;
-      this.tourStepStart = NOW();
-      this.tourRecPlaced = false;
-      this.sel = null;
-      this.fitView(this.tourBottomInset(3), 1.15);
-      this.setSpeech('The recorder watches a team for you and sends a recap on a schedule. Drop it near the team you care about.');
-    } else if (this.tourStep === 3) {
       this.tourEnd();
       return;
     }
@@ -366,15 +358,6 @@ export class Sim {
   }
   tourAdvanceAfterFix() {
     this.setSpeech("That's the job. You only step in when it matters.");
-  }
-  tourEnterTools() {
-    this.tourStep = 2;
-    this.tourStepStart = NOW();
-    this.tourToolPlaced = false;
-    this.sel = null;
-    this.fitView(this.tourBottomInset(2), 1.15);
-    this.setSpeech("These are tools. Drag one next to a team and they'll use it. Hover or hold one to see what it does.");
-    this.notify();
   }
   tourEnd() {
     this.tourOn = false;
@@ -627,9 +610,9 @@ export class Sim {
     this.zoom = z;
     this.pan = { x: 30 + (aw - w * z) / 2 - (T.x - w / 2) * z, y: topInset + (ah - h * z) / 2 - (T.y - h / 2) * z };
   }
-  /** Bottom inset (px) to keep the world clear of the speech card, and the dock once it shows. */
-  tourBottomInset(step: number) {
-    return step >= 2 ? 320 : 210;
+  /** Bottom inset (px) to keep the world clear of the speech card. Both tour stops use the same one now that U14 dropped the dock-height stops. */
+  tourBottomInset() {
+    return 210;
   }
   zoomAt(sx: number, sy: number, f: number) {
     const z = this.zoom,
@@ -843,8 +826,6 @@ export class Sim {
       this.popAt = NOW();
     }
     this.dirty = true;
-    if (this.tourOn && this.tourStep === 2) this.tourToolPlaced = true;
-    if (this.tourOn && this.tourStep === 3 && type === 'rec') this.tourRecPlaced = true;
   }
   /** Phone (U2): the "+" sheet taps a tool tile instead of dragging one off a dock. */
   placeFurnFromSheet(type: Furniture['type']) {
@@ -857,6 +838,10 @@ export class Sim {
   }
   openPhoneAdd() {
     this.phoneAddOpen = true;
+    this.showAddSheetToolsTip = !this.seenToolsTip;
+    this.showAddSheetRecorderTip = !this.seenRecorderTip;
+    this.seenToolsTip = true;
+    this.seenRecorderTip = true;
     this.notify();
   }
   closePhoneAdd() {
@@ -1977,6 +1962,8 @@ export class Sim {
       phoneAddOpen: this.phoneAddOpen,
       openPhoneAdd: () => this.openPhoneAdd(),
       closePhoneAdd: () => this.closePhoneAdd(),
+      showAddSheetToolsTip: this.showAddSheetToolsTip,
+      showAddSheetRecorderTip: this.showAddSheetRecorderTip,
       placeFromSheet: (k: Furniture['type']) => this.placeFurnFromSheet(k),
       needsCount: this.visibleNeeds().length,
       openPipNeeds: () => this.openPipNeeds(),

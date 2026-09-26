@@ -15,10 +15,13 @@ export default function App() {
   const rv = sim.renderVals();
 
   // Chrome stays hidden through the opening and the questions; the tour brings
-  // the feed in at its first stop and the dock + zoom controls at its third.
+  // the feed in at its first stop. U14: the tour is two stops now (org overview,
+  // then the fix) and ends right after, so the dock only ever shows once the
+  // tour is over -- tools and the recorder are taught by the "+" sheet's one-time
+  // tips instead of a third and fourth tour stop.
   const full = !sim.introOn && !sim.tourOn;
-  const showFeed = full || (sim.tourOn && sim.tourStep >= 0);
-  const showDock = full || (sim.tourOn && sim.tourStep >= 2);
+  const showFeed = full || sim.tourOn;
+  const showDock = full;
   const showZoom = full;
   const showTitle = full || sim.tourOn;
 

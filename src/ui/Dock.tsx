@@ -68,11 +68,22 @@ function PhoneAddSheet({ rv }: { rv: any }) {
         <button style={{ ...tileBtn, background: '#15140f', color: '#f4f3ee' }} onClick={() => { rv.addMgr(); rv.closePhoneAdd(); }}>+ MANAGER</button>
         <button style={tileBtn} onClick={() => { rv.addTeam(); rv.closePhoneAdd(); }}>+ TEAM</button>
         <div style={{ height: 1.5, background: '#dedcd2', margin: '6px 0' }} />
+        {/* U14: the tour no longer teaches tools, so the first sheet-open explains them here. */}
+        {rv.showAddSheetToolsTip && (
+          <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.4, color: '#6b6a62', padding: '0 2px 4px' }}>
+            Tap a tool to drop it near the team it should help.
+          </div>
+        )}
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         {rv.dock.map((dk: any) => (
-          <button key={dk.kind} style={tileBtn} onClick={() => rv.placeFromSheet(dk.kind)}>
-            <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.06em' }}>{dk.short}</span>
-          </button>
+          <div key={dk.kind}>
+            <button style={tileBtn} onClick={() => rv.placeFromSheet(dk.kind)}>
+              <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.06em' }}>{dk.short}</span>
+            </button>
+            {dk.kind === 'rec' && rv.showAddSheetRecorderTip && (
+              <div style={{ fontSize: 10.5, fontWeight: 600, lineHeight: 1.4, color: '#6b6a62', padding: '5px 2px 0' }}>{dk.tip}</div>
+            )}
+          </div>
         ))}
       </div>
     </div>
