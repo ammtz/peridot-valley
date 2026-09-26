@@ -50,7 +50,10 @@ await shot('o1-wake');
 
 await js('window.__sim.wake()');
 await sleep(3000); // let the greeting type out
-await js('window.__sim.advanceGreet()');
+// U10: the greeting ends with a real "Let's go" button, not tap-anywhere.
+console.log('U10 "Let\'s go" button present:', !!(await rectOfButton("Let's go")));
+const wentOk = await clickByText("Let's go");
+if (!wentOk) await js('window.__sim.advanceGreet()');
 await sleep(3000); // let "Should they check with you..." type out
 await shot('o2-q1');
 console.log('q1 asked:', (await js('window.__sim.speechText')) === 'Should they check with you before anything important?');
