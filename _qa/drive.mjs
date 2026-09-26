@@ -56,6 +56,16 @@ async function drag(x0, y0, x1, y1) {
 }
 async function tap(x, y) { await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y); await sleep(500); }
 const feedText = () => js('document.body.innerText');
+// Poll until a condition holds (or give up after timeoutMs) -- avoids fixed sleeps
+// racing the typewriter under headless-browser load.
+async function waitFor(exprFn, timeoutMs = 4000, stepMs = 100) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    if (await js(exprFn)) return true;
+    await sleep(stepMs);
+  }
+  return false;
+}
 const clickByText = (name) => js(`(()=>{const el=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(name)});if(!el)return false;el.click();return true;})()`);
 const clickByPartial = (needle) => js(`(()=>{const el=[...document.querySelectorAll('button')].find(b=>b.textContent.includes(${JSON.stringify(needle)}));if(!el)return false;el.click();return true;})()`);
 // U11: every visible button/link is at least 44x44.
@@ -83,7 +93,8 @@ console.log('starts on wake screen:', (await feedText()).includes('tap to wake')
 await shot('o1-wake');
 
 await js('window.__sim.wake()');
-await sleep(3000); // let the greeting type out
+await waitFor('window.__sim.speechDone()'); // let the greeting type out, however long that takes
+await sleep(200);
 // U10: the greeting ends with a real "Let's go" button, not tap-anywhere.
 console.log('U10 "Let\'s go" button present:', !!(await rectOfButton("Let's go")));
 const wentOk = await clickByText("Let's go");
@@ -163,6 +174,8 @@ const savedOnboarded = await js("JSON.parse(localStorage.getItem('the-system-liv
 console.log('onboarded persisted to storage:', savedOnboarded);
 
 // U15/T6: accessibility -- close buttons, keyboard-reachable world nodes, aria-live feed.
+// The feed panel itself (not just its closed pill) is what carries aria-live, so open it first.
+await js('window.__sim.showFeed = true; window.__sim.notify();'); await sleep(200);
 const a11y = await js(`(()=>{
   const closeBtns = [...document.querySelectorAll('button')].filter(b => b.textContent.trim() === '×');
   const worldButtons = document.querySelectorAll('[role="button"][tabindex="0"]');
