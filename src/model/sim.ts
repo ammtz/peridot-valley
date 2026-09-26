@@ -2,6 +2,7 @@ import type { Agent, FeedCard, Furniture, Manager, Mood, Need, NodeKind, Sel, Se
 import { BLOCKERS, DOCK_TIP, FEARS, FR, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic } from './constants';
 import { blank, desks, roomH, roomW, seed } from './seed';
 import { genericAgents, genericTeamPool, helperCount, pickPreset, Q2_OPTIONS, type PresetManagerSeed } from './presets';
+import { decide, type DecideState } from './decider';
 
 type DragKind = 'pan' | 'team' | 'sup' | 'furn' | 'agent' | 'newfurn' | 'ghost';
 
@@ -1065,7 +1066,8 @@ export class Sim {
   makeFear(a: Agent) {
     const f = FEARS[a.team] || FEARS._;
     // "No, just handle it" — PIP resolves most asks itself instead of interrupting you.
-    if (!this.askFirst && Math.random() < 0.7) {
+    const state: DecideState = { askFirst: this.askFirst, agentName: a.name, team: a.team };
+    if (decide('handleOrAsk', state, ['handled', 'ask']) === 'handled') {
       this.card('HANDLED', this.pathName(a.team), 'PIP', ' handled it: ' + a.name + ' skipped ' + f + '.');
       this.evLog.push({ t: NOW(), team: a.team, kind: 'fear', who: a.name, text: f });
       this.complete(a, NOW());
@@ -1122,12 +1124,14 @@ export class Sim {
     this.card('YOU', this.pathName(a.team), a.name, ' picked up 2 new tasks.');
   }
   mood(a: Agent, t: number): Mood {
-    if (a.blocked) return 'frustrated';
-    if (a.fear) return 'stalled';
-    if (a.backlog.length >= 4) return 'overwhelmed';
-    if (!a.doing && !a.backlog.length) return 'bored';
-    if ((a.flowUntil || 0) > t) return 'flow';
-    return 'working';
+    const state: DecideState = {
+      blocked: !!a.blocked,
+      waitingOnApproval: !!a.fear,
+      backlogCount: a.backlog.length,
+      hasCurrentTask: !!a.doing,
+      inFlow: (a.flowUntil || 0) > t,
+    };
+    return decide('mood', state, ['frustrated', 'stalled', 'overwhelmed', 'bored', 'flow', 'working'] as Mood[]);
   }
   thought(a: Agent, md: Mood) {
     switch (md) {
