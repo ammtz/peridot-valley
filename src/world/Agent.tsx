@@ -7,6 +7,15 @@ export function Agent({ a }: { a: any }) {
       onPointerDown={a.down}
       onPointerEnter={a.enter}
       onPointerLeave={a.leave}
+      role="button"
+      tabIndex={0}
+      aria-label={a.ariaLabel}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          a.activate();
+        }
+      }}
       style={{ position: 'absolute', left: a.l, top: a.t, width: 36, height: 36, margin: '-18px 0 0 -18px', cursor: 'grab', opacity: a.op, zIndex: a.z }}
     >
       {a.sel && (

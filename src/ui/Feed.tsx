@@ -57,7 +57,7 @@ export function Feed({ rv }: { rv: any }) {
         <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#15140f', opacity: rv.liveOp }} />
         <button onClick={rv.toggleFeed} aria-label="Close" style={{ width: 44, height: 44, border: '2px solid #15140f', borderRadius: 10, background: 'transparent', fontWeight: 800, fontSize: 17, color: '#15140f', cursor: 'pointer' }}>×</button>
       </div>
-      <div style={{ flex: 1, overflow: 'auto', padding: '14px 14px 30px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div aria-live="polite" style={{ flex: 1, overflow: 'auto', padding: '14px 14px 30px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         {/* U13: open asks are pinned at the top, with their own action buttons. */}
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         {rv.pinnedAsks.map((nd: any, i: number) => (

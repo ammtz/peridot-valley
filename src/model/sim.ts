@@ -113,11 +113,23 @@ export class Sim {
   raf = 0;
   /** T4: counts actual notify()/re-render triggers -- exposed for the drive.mjs render-count check. */
   renderTicks = 0;
+  /** U15/T6: prefers-reduced-motion -- speech shows instantly, bob/pulse/aura stop. */
+  reducedMotion = false;
 
   constructor() {
     if (typeof window !== 'undefined') {
       try {
         this.freshParam = new URLSearchParams(window.location.search).has('fresh');
+      } catch {
+        /* ignore */
+      }
+      try {
+        const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+        this.reducedMotion = mq.matches;
+        mq.addEventListener?.('change', (e) => {
+          this.reducedMotion = e.matches;
+          this.notify();
+        });
       } catch {
         /* ignore */
       }
@@ -149,6 +161,7 @@ export class Sim {
     this.speechAt = NOW();
   }
   speechShown(): string {
+    if (this.reducedMotion) return this.speechText;
     const n = Math.floor((NOW() - this.speechAt) * 40);
     return this.speechText.slice(0, cl(n, 0, this.speechText.length));
   }
@@ -1732,6 +1745,8 @@ export class Sim {
           e2 += look;
           eH = 3;
         }
+        // U15/T6: prefers-reduced-motion stops the bob, the pulse and the aura.
+        if (this.reducedMotion) bob = 0;
         const blink = ((t * 0.9 + ph * 1.37) % 4.3) < 0.13;
         if (blink && md !== 'bored' && md !== 'flow') {
           eT += (eH - 0.8) / 2;
@@ -1743,7 +1758,7 @@ export class Sim {
         const th = this.thought(a, md);
         const hasBubble = tmode !== 'off' && !walking && (aSel || hov || tmode === 'always');
         const hasIcon = notable && !hasBubble && !walking && tmode !== 'off';
-        const pulse = 1 + 0.08 * Math.sin(t * (md === 'frustrated' ? 9 : md === 'overwhelmed' ? 7 : 3) + ph);
+        const pulse = this.reducedMotion ? 1 : 1 + 0.08 * Math.sin(t * (md === 'frustrated' ? 9 : md === 'overwhelmed' ? 7 : 3) + ph);
         const decoT = 9.5 + bob;
         const cyc = (sp: number, ph2: number) => ((((t * sp + ph2) % 1) + 1) % 1);
         return {
@@ -1796,12 +1811,15 @@ export class Sim {
           icon: md === 'overwhelmed' ? String(a.backlog.length + (a.doing ? 1 : 0)) : MOOD[md].icon,
           mc: MOOD[md].c,
           hasAura: notable,
-          auraOp: 0.55 + 0.25 * Math.sin(t * 3 + ph),
+          auraOp: this.reducedMotion ? 0.55 : 0.55 + 0.25 * Math.sin(t * 3 + ph),
           auraSc: pulse,
           op: pend ? 0.4 : 1,
           sel: aSel,
           showName: (aSel || always || z >= 1.25) && !hasBubble,
           name: a.name,
+          // U15/T6: keyboard access -- role="button" + Enter/Space in Agent.tsx call this.
+          ariaLabel: a.name + ', ' + (MOOD[md].label || MOOD[md].tag || 'working').toLowerCase(),
+          activate: () => this.select({ kind: 'agent', id: a.id }),
           down: (e: React.PointerEvent) => this.nodeDown(e, 'agent', a.id),
           enter: () => {
             this.hoverAgent = a.id;
@@ -1843,6 +1861,9 @@ export class Sim {
         }),
         desks: dk.map((d) => ({ l: w / 2 + d[0] - 10, t: h / 2 + d[1] + 8, c: pend ? 'rgba(21,20,15,.2)' : 'rgba(21,20,15,.5)' })),
         agents,
+        // U15/T6: keyboard access for the floor itself.
+        ariaLabel: T.name + ', ' + (pend ? 'pending' : anyStuck ? 'has a stuck agent' : n === 0 ? 'empty' : plural(n, 'agent')),
+        activate: () => this.select({ kind: 'team', id: T.id }),
         down: (e: React.PointerEvent) => this.nodeDown(e, 'team', T.id),
       });
     });
@@ -1851,7 +1872,7 @@ export class Sim {
       const prime = s.id === 'pip',
         sz = s.size,
         ph = prime ? 0 : si * 1.3;
-      const bob = Math.sin(t * 2 + ph) * (prime ? 4 : 3);
+      const bob = this.reducedMotion ? 0 : Math.sin(t * 2 + ph) * (prime ? 4 : 3);
       const rv = t - (s.recv || -99),
         rsc = rv >= 0 && rv < 0.45 ? 1 + 0.12 * Math.sin((rv / 0.45) * Math.PI) : 1;
       const born = s.born != null ? cl((t - s.born) / 0.6, 0, 1) : 1;
@@ -1888,7 +1909,7 @@ export class Sim {
         halo: sz * 1.85,
         haloL: -sz * 0.925,
         haloT: -sz * 0.925 + bob,
-        hs: hot ? 1.25 : 1 + Math.sin(t * 1.6 + ph) * 0.06,
+        hs: hot ? 1.25 : this.reducedMotion ? 1 : 1 + Math.sin(t * 1.6 + ph) * 0.06,
         haloOp: hot ? 0.7 : isSel ? 0.45 : prime ? 0.18 : 0.13,
         haloStyle: hot ? 'solid' : 'dashed',
         haloBg: hot ? 'rgba(21,20,15,.06)' : 'transparent',
@@ -1910,7 +1931,10 @@ export class Sim {
         // U5: the bottom-center pill is the main "needs you" cue now, not a badge on PIP.
         hasBadge: false,
         badge: this.visibleNeeds().length,
-        badgeSc: 1 + 0.06 * Math.sin(t * 4),
+        badgeSc: this.reducedMotion ? 1 : 1 + 0.06 * Math.sin(t * 4),
+        // U15/T6: keyboard access for the manager pin.
+        ariaLabel: s.name + ', ' + (prime ? 'prime supervisor' : s.role.toLowerCase()),
+        activate: () => this.select({ kind: 'sup', id: s.id }),
         down: (e: React.PointerEvent) => this.nodeDown(e, 'sup', s.id),
       });
     });
@@ -1999,7 +2023,16 @@ export class Sim {
       hasReTag: !!this.hoverMgr,
       reTag,
       dock: FT.mcp
-        ? (['mcp', 'db', 'books', 'rec'] as const).map((k) => ({ kind: k, t, short: FT[k].short, tip: DOCK_TIP[k], down: (e: React.PointerEvent) => this.dockDown(e, k) }))
+        ? (['mcp', 'db', 'books', 'rec'] as const).map((k) => ({
+            kind: k,
+            t,
+            short: FT[k].short,
+            tip: DOCK_TIP[k],
+            // U15/T6: keyboard access -- Enter/Space drops the tool near center, same as tapping it in the phone sheet.
+            ariaLabel: FT[k].name + ' tool',
+            activate: () => this.placeFurnFromSheet(k),
+            down: (e: React.PointerEvent) => this.dockDown(e, k),
+          }))
         : [],
       dockX: vw - this.feedW() < 700 ? (vw - this.feedW()) / 2 : Math.max(290 + 200, (vw - this.feedW()) / 2 + 40),
       ctrlBottom: vw - this.feedW() < 700 ? 128 : 18,

@@ -162,6 +162,40 @@ await shot('o8-end');
 const savedOnboarded = await js("JSON.parse(localStorage.getItem('the-system-live-v4')||'null')?.onboarded");
 console.log('onboarded persisted to storage:', savedOnboarded);
 
+// U15/T6: accessibility -- close buttons, keyboard-reachable world nodes, aria-live feed.
+const a11y = await js(`(()=>{
+  const closeBtns = [...document.querySelectorAll('button')].filter(b => b.textContent.trim() === '×');
+  const worldButtons = document.querySelectorAll('[role="button"][tabindex="0"]');
+  return {
+    closeBtnsHaveLabel: closeBtns.length > 0 && closeBtns.every(b => b.getAttribute('aria-label') === 'Close'),
+    worldButtonCount: worldButtons.length,
+    worldButtonsHaveLabel: worldButtons.length > 0 && [...worldButtons].every(b => !!b.getAttribute('aria-label')),
+    feedAriaLive: !!document.querySelector('[aria-live="polite"]'),
+  };
+})()`);
+console.log('U15/T6 close/aria-label/aria-live present:', a11y.closeBtnsHaveLabel && a11y.worldButtonCount > 0 && a11y.worldButtonsHaveLabel && a11y.feedAriaLive, JSON.stringify(a11y));
+
+// Enter on a keyboard-focused world node (PIP) opens its popup, same as a tap.
+const kbOpened = await js(`(()=>{
+  const pip = [...document.querySelectorAll('[role="button"][tabindex="0"]')].find(el => el.getAttribute('aria-label')?.startsWith('PIP,'));
+  if (!pip) return false;
+  pip.focus();
+  pip.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  return true;
+})()`);
+await sleep(300);
+console.log('U15/T6 Enter on PIP opens its popup:', kbOpened && (await feedText()).includes('NEEDS YOU'));
+await js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))"); await sleep(300);
+
+// prefers-reduced-motion: speech shows instantly, bob/pulse/aura stop (checked via sim state).
+await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+await sleep(200);
+console.log('reducedMotion detected:', await js('window.__sim.reducedMotion'));
+await js("window.__sim.setSpeech('This should appear all at once, not typed out letter by letter.')");
+const instant = await js('window.__sim.speechShown() === window.__sim.speechText');
+console.log('U15/T6 reduced motion shows speech instantly:', instant);
+await cdp('Emulation.setEmulatedMedia', { features: [] });
+
 if (!MOBILE) {
   await js('location.reload()'); await sleep(2500);
   console.log('returning visitor skips the opening:', !(await feedText()).includes('tap to wake'));

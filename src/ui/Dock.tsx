@@ -26,6 +26,15 @@ function DockTile({ dk }: { dk: any }) {
       onMouseEnter={() => setTip(true)}
       onMouseLeave={() => setTip(false)}
       data-dock-kind={dk.kind}
+      role="button"
+      tabIndex={0}
+      aria-label={dk.ariaLabel}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          dk.activate();
+        }
+      }}
       style={{ position: 'relative', width: 62, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '5px 2px 4px', borderRadius: 10, cursor: 'grab' }}
     >
       {tip && (
