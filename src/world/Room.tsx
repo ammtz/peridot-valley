@@ -17,7 +17,7 @@ export function Room({ r }: { r: any }) {
         )}
       </div>
       {r.empty && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 600, color: '#9a988f', letterSpacing: '.04em', pointerEvents: 'none', textAlign: 'center', padding: '0 12px' }}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 600, color: '#6b6a62', letterSpacing: '.04em', pointerEvents: 'none', textAlign: 'center', padding: '0 12px' }}>
           drag agents here
         </div>
       )}

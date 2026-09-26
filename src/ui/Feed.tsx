@@ -16,7 +16,7 @@ function FeedCard({ c }: { c: any }) {
         </span>
         <span style={{ fontWeight: 600, fontSize: 10, color: '#6b6a62', flex: 'none' }}>{c.ago}</span>
       </div>
-      <div style={{ fontWeight: 500, fontSize: 12.5, lineHeight: 1.5 }}>
+      <div style={{ fontWeight: 500, fontSize: 15, lineHeight: 1.5 }}>
         <span style={{ fontWeight: 800 }}>{c.who}</span>{c.text}
       </div>
     </div>
@@ -30,7 +30,7 @@ export function Feed({ rv }: { rv: any }) {
     return (
       <button
         onClick={rv.toggleFeed}
-        style={{ position: 'fixed', right: 18, top: 16, zIndex: 600, display: 'flex', alignItems: 'center', gap: 8, height: 38, padding: '0 14px', background: '#fbfaf5', border: '2.5px solid #15140f', borderRadius: 11, fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 11, letterSpacing: '.1em', color: '#15140f', cursor: 'pointer', boxShadow: '0 4px 0 rgba(21,20,15,.15)' }}
+        style={{ position: 'fixed', right: 18, top: 16, zIndex: 600, display: 'flex', alignItems: 'center', gap: 8, minHeight: 44, padding: '0 14px', background: '#fbfaf5', border: '2.5px solid #15140f', borderRadius: 12, fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 13, letterSpacing: '.1em', color: '#15140f', cursor: 'pointer', boxShadow: '0 4px 0 rgba(21,20,15,.15)' }}
       >
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#15140f', opacity: rv.liveOp }} />
         PIP → YOU
@@ -55,7 +55,7 @@ export function Feed({ rv }: { rv: any }) {
           </div>
         </div>
         <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#15140f', opacity: rv.liveOp }} />
-        <button onClick={rv.toggleFeed} style={{ width: 28, height: 28, border: '2px solid #15140f', borderRadius: 8, background: 'transparent', fontWeight: 800, fontSize: 13, color: '#15140f', cursor: 'pointer' }}>×</button>
+        <button onClick={rv.toggleFeed} aria-label="Close" style={{ width: 44, height: 44, border: '2px solid #15140f', borderRadius: 10, background: 'transparent', fontWeight: 800, fontSize: 17, color: '#15140f', cursor: 'pointer' }}>×</button>
       </div>
       <div style={{ flex: 1, overflow: 'auto', padding: '14px 14px 30px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         {/* U13: open asks are pinned at the top, with their own action buttons. */}
@@ -63,11 +63,11 @@ export function Feed({ rv }: { rv: any }) {
         {rv.pinnedAsks.map((nd: any, i: number) => (
           <div key={'ask' + i} data-pinned-ask="true" style={{ ...cardStyle, border: '2.5px solid #15140f', background: '#fff8e6' }}>
             <div style={{ fontWeight: 700, fontSize: 10, letterSpacing: '.08em', color: '#6b6a62', marginBottom: 6 }}>{nd.path}</div>
-            <div style={{ fontWeight: 500, fontSize: 12.5, lineHeight: 1.5, marginBottom: 9 }}>{nd.text}</div>
+            <div style={{ fontWeight: 500, fontSize: 15, lineHeight: 1.5, marginBottom: 9 }}>{nd.text}</div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               {nd.acts.map((ac: any, j: number) => (
-                <button key={j} onClick={ac.go} style={{ minHeight: 44, padding: '0 14px', borderRadius: 8, border: '2px solid #15140f', background: ac.bg, color: ac.fg, fontWeight: 700, fontSize: 11, letterSpacing: '.04em', cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace" }}>{ac.label}</button>
+                <button key={j} onClick={ac.go} style={{ minHeight: 44, padding: '0 14px', borderRadius: 8, border: '2px solid #15140f', background: ac.bg, color: ac.fg, fontWeight: 800, fontSize: 13, letterSpacing: '.04em', cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace" }}>{ac.label}</button>
               ))}
             </div>
           </div>

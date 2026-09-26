@@ -45,7 +45,7 @@ export function Agent({ a }: { a: any }) {
         )}
       </div>
       {a.showName && (
-        <div style={{ position: 'absolute', left: '50%', top: a.nameT, transform: 'translateX(-50%)', fontSize: 7.5, fontWeight: 700, letterSpacing: '.08em', color: '#6b6a62', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
+        <div style={{ position: 'absolute', left: '50%', top: a.nameT, transform: 'translateX(-50%)', fontSize: a.labelSize, fontWeight: 700, letterSpacing: '.08em', color: '#6b6a62', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
           {a.name}
         </div>
       )}

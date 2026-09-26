@@ -58,6 +58,18 @@ async function tap(x, y) { await mouse('mousePressed', x, y); await mouse('mouse
 const feedText = () => js('document.body.innerText');
 const clickByText = (name) => js(`(()=>{const el=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(name)});if(!el)return false;el.click();return true;})()`);
 const clickByPartial = (needle) => js(`(()=>{const el=[...document.querySelectorAll('button')].find(b=>b.textContent.includes(${JSON.stringify(needle)}));if(!el)return false;el.click();return true;})()`);
+// U11: every visible button/link is at least 44x44.
+const tinyHitTargets = () => js(`(()=>{
+  const bad = [...document.querySelectorAll('button,a')].filter((el) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && (r.width < 44 || r.height < 44);
+  }).map((el) => ({ tag: el.tagName, text: el.textContent.trim().slice(0, 24), w: Math.round(el.getBoundingClientRect().width), h: Math.round(el.getBoundingClientRect().height) }));
+  return bad;
+})()`);
+const checkHitTargets = async (label) => {
+  const bad = await tinyHitTargets();
+  console.log('U11 ' + label + ' -- no button/link under 44x44:', bad.length === 0, bad.length ? JSON.stringify(bad) : '');
+};
 const rectOfButton = (name) => js(`(()=>{const el=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(name)});if(!el)return null;const r=el.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];})()`);
 
 await cdp('Runtime.enable'); await cdp('Page.enable');
@@ -79,6 +91,7 @@ if (!wentOk) await js('window.__sim.advanceGreet()');
 await sleep(3000); // let "Should they check with you..." type out
 await shot('o2-q1');
 console.log('q1 asked:', (await js('window.__sim.speechText')) === 'Should they check with you before anything important?');
+await checkHitTargets('q1 answer buttons');
 // Real tap on the Q1 answer button, to prove it is actually hittable.
 const askRect = await rectOfButton('No, just handle it');
 console.log('found "No, just handle it" button:', !!askRect);
@@ -92,6 +105,7 @@ await js("window.__sim.answerQ2('job')");
 await sleep(3000); // let the first hire card's line type out
 await shot('o3-hire-card');
 console.log('hire queue length:', await js('window.__sim.hireQueue.length'));
+await checkHitTargets('hire card buttons');
 
 let hired = 0;
 for (let guard = 0; guard < 6; guard++) {
@@ -124,6 +138,7 @@ await sleep(1000);
 console.log('onboarded after tour end:', await js('window.__sim.m.onboarded'));
 console.log('tourOn after end:', await js('window.__sim.tourOn'));
 await shot('o6-tour-end');
+await checkHitTargets('post-tour chrome (dock/zoom/pill/feed)');
 // U8: the closing line stays up for a few seconds after tourOn goes false.
 console.log('U8 outro line still shown right after tourOn=false:', (await feedText()).includes("It's yours now"));
 await sleep(5200);
@@ -161,6 +176,7 @@ if (!MOBILE) {
   console.log('U5 pill reads needs count:', /things? need you|All clear/.test(await feedText()));
   await clickByPartial('need you'); await sleep(400); await shot('t1-pip-popup');
   console.log('PIP popup shows NEEDS YOU:', (await feedText()).includes('NEEDS YOU'));
+  await checkHitTargets('PIP popup (needs + acts buttons)');
   await js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))"); await sleep(300);
 
   // U13: open asks pinned at the top of the feed, ahead of the regular cards.
@@ -250,6 +266,15 @@ if (!MOBILE) {
   }))()`);
   console.log('U2 phone chrome recedes to ?/FIT/+/pills, no sheet by default:', JSON.stringify(chrome));
   await shot('p4-phone-chrome');
+  await checkHitTargets('phone default chrome (?/FIT/+/pills)');
+
+  await js('window.__sim.openPhoneMood()'); await sleep(300);
+  await checkHitTargets('phone mood sheet');
+  await js('window.__sim.closePhoneMood()'); await sleep(200);
+
+  await js('window.__sim.openPhoneAdd()'); await sleep(300);
+  await checkHitTargets('phone + sheet (with tips)');
+  await js('window.__sim.closePhoneAdd()'); await sleep(200);
 }
 console.log('errors:', errors.length ? errors : 'none');
 ws.close(); edge.kill();

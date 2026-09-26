@@ -17,13 +17,14 @@ const card: React.CSSProperties = {
 };
 const nextBtn: React.CSSProperties = {
   marginTop: 14,
-  padding: '10px 16px',
+  minHeight: 44,
+  padding: '0 18px',
   borderRadius: 9,
   border: '2px solid #15140f',
   background: '#15140f',
   color: '#f4f3ee',
   fontWeight: 800,
-  fontSize: 11.5,
+  fontSize: 13,
   letterSpacing: '.06em',
   cursor: 'pointer',
   fontFamily: "'JetBrains Mono',monospace",
@@ -130,7 +131,10 @@ export function Tour({ sim }: { sim: Sim }) {
             )}
             <button
               onClick={() => sim.tourSkip()}
-              style={{ pointerEvents: 'auto', background: 'transparent', border: 'none', fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, fontWeight: 600, color: '#9a988f', letterSpacing: '.03em', cursor: 'pointer', textDecoration: 'underline' }}
+              style={{
+                pointerEvents: 'auto', background: 'transparent', border: 'none', minHeight: 44, minWidth: 44, padding: '0 10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, fontWeight: 600, color: '#6b6a62', letterSpacing: '.03em', cursor: 'pointer', textDecoration: 'underline',
+              }}
             >
               skip tour
             </button>

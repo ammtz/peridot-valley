@@ -1730,6 +1730,8 @@ export class Sim {
           ringT: 4 + bob,
           dotT: 1 + bob,
           nameT: 30 + bob,
+          // U11: world labels stay readable at any zoom instead of shrinking to nothing.
+          labelSize: Math.max(7.5, 11 / z),
           working: (md === 'working' || atF) && !walking && !pend,
           d1: 0.4 + 0.6 * Math.abs(Math.sin(t * 6 + ph)),
           d2: 0.4 + 0.6 * Math.abs(Math.sin(t * 6 + ph + 1)),

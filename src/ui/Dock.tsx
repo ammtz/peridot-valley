@@ -49,7 +49,7 @@ function PhoneAddSheet({ rv }: { rv: any }) {
   if (!rv.phoneAddOpen) return null;
   const tileBtn: React.CSSProperties = {
     display: 'flex', alignItems: 'center', gap: 10, width: '100%', minHeight: 44, padding: '10px 14px', borderRadius: 10, border: '2px solid #15140f',
-    background: 'transparent', color: '#15140f', fontWeight: 800, fontSize: 12, letterSpacing: '.06em', cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace",
+    background: 'transparent', color: '#15140f', fontWeight: 800, fontSize: 13, letterSpacing: '.06em', cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace",
   };
   return (
     <div
@@ -120,8 +120,8 @@ export function Dock({ rv }: { rv: any }) {
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5, justifyContent: 'center' }}>
-        <button onClick={rv.addMgr} style={{ height: 28, padding: '0 10px', borderRadius: 8, border: '2px solid #15140f', background: '#15140f', color: '#f4f3ee', fontWeight: 800, fontSize: 10, letterSpacing: '.06em', cursor: 'pointer', whiteSpace: 'nowrap' }}>+ MANAGER</button>
-        <button onClick={rv.addTeam} style={{ height: 28, padding: '0 10px', borderRadius: 8, border: '2px solid #15140f', background: 'transparent', color: '#15140f', fontWeight: 800, fontSize: 10, letterSpacing: '.06em', cursor: 'pointer', whiteSpace: 'nowrap' }}>+ TEAM</button>
+        <button onClick={rv.addMgr} style={{ minHeight: 44, padding: '0 12px', borderRadius: 8, border: '2px solid #15140f', background: '#15140f', color: '#f4f3ee', fontWeight: 800, fontSize: 13, letterSpacing: '.06em', cursor: 'pointer', whiteSpace: 'nowrap' }}>+ MANAGER</button>
+        <button onClick={rv.addTeam} style={{ minHeight: 44, padding: '0 12px', borderRadius: 8, border: '2px solid #15140f', background: 'transparent', color: '#15140f', fontWeight: 800, fontSize: 13, letterSpacing: '.06em', cursor: 'pointer', whiteSpace: 'nowrap' }}>+ TEAM</button>
         <div style={{ fontSize: 8.5, fontWeight: 600, color: '#6b6a62', textAlign: 'center', whiteSpace: 'nowrap' }}>under {rv.addTarget}</div>
       </div>
       <div style={{ width: 1.5, background: '#dedcd2', margin: '2px 2px' }} />

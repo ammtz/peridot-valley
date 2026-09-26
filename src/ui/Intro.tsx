@@ -17,26 +17,27 @@ const card: React.CSSProperties = {
 };
 const answerBtn: React.CSSProperties = {
   width: '100%',
-  minHeight: 46,
+  minHeight: 44,
   padding: '0 14px',
   borderRadius: 10,
   border: '2px solid #15140f',
   background: 'transparent',
   color: '#15140f',
   fontWeight: 800,
-  fontSize: 12.5,
+  fontSize: 15,
   letterSpacing: '.04em',
   cursor: 'pointer',
   fontFamily: "'JetBrains Mono',monospace",
 };
 const smallBtn: React.CSSProperties = {
-  padding: '9px 13px',
+  minHeight: 44,
+  padding: '0 14px',
   borderRadius: 9,
   border: '2px solid #15140f',
   background: 'transparent',
   color: '#15140f',
   fontWeight: 800,
-  fontSize: 11,
+  fontSize: 13,
   letterSpacing: '.05em',
   cursor: 'pointer',
   fontFamily: "'JetBrains Mono',monospace",
@@ -183,8 +184,9 @@ export function Intro({ sim }: { sim: Sim }) {
           sim.skipIntro();
         }}
         style={{
-          pointerEvents: 'auto', position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', background: 'transparent', border: 'none',
-          fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, fontWeight: 600, color: '#9a988f', letterSpacing: '.03em', cursor: 'pointer', textDecoration: 'underline',
+          pointerEvents: 'auto', position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', background: 'transparent', border: 'none',
+          minHeight: 44, minWidth: 44, padding: '12px 16px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, fontWeight: 600, color: '#6b6a62', letterSpacing: '.03em', cursor: 'pointer', textDecoration: 'underline',
         }}
       >
         skip — show me a full valley

@@ -45,7 +45,7 @@ export function TitleBar({ agentCount, mgrCount, rv }: { agentCount: number; mgr
           </span>
         ))}
       </div>
-      <div style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: '.02em', color: '#9a988f' }}>
+      <div style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: '.02em', color: '#6b6a62' }}>
         drag anything · drop a team or manager on a manager to re-org · tap to open
       </div>
     </div>
