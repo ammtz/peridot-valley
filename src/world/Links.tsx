@@ -1,0 +1,27 @@
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function Links({ lines, ghosts, pulses }: { lines: any[]; ghosts: any[]; pulses: any[] }) {
+  return (
+    <>
+      {lines.map((ln, i) => (
+        <div
+          key={i}
+          style={{ position: 'absolute', left: ln.x, top: ln.y, width: ln.w, height: 0, borderTop: `${ln.bw}px ${ln.ls} rgba(21,20,15,${ln.op})`, transform: `rotate(${ln.a}deg)`, transformOrigin: '0 0', pointerEvents: 'none' }}
+        />
+      ))}
+      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+      {ghosts.map((g: any) => (
+        <div
+          key={g.id}
+          onPointerDown={g.down}
+          style={{ position: 'absolute', left: g.l, top: g.t, width: 130, height: 96, border: '2px dashed rgba(21,20,15,.18)', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, fontWeight: 300, color: 'rgba(21,20,15,.25)', cursor: 'pointer' }}
+        >
+          +
+        </div>
+      ))}
+      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+      {pulses.map((p: any, i: number) => (
+        <div key={i} style={{ position: 'absolute', left: p.x, top: p.y, width: 10, height: 10, margin: '-5px 0 0 -5px', borderRadius: 5, background: '#15140f', boxShadow: '0 0 0 5px rgba(21,20,15,.1)', pointerEvents: 'none', zIndex: 50 }} />
+      ))}
+    </>
+  );
+}

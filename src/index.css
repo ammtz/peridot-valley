@@ -1,0 +1,24 @@
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #f4f3ee;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+#root {
+  height: 100%;
+}
+a {
+  color: #15140f;
+}
+a:hover {
+  color: #6b6a62;
+}
+button,
+input {
+  font-family: inherit;
+}

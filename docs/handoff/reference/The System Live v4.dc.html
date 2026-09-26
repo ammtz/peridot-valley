@@ -1,0 +1,1264 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#f4f3ee;overflow:hidden;overscroll-behavior:none}
+a{color:#15140f}
+a:hover{color:#6b6a62}
+button,input{font-family:inherit}
+</style>
+</helmet>
+
+<div ref="{{ vpRef }}" onPointerDown="{{ bgDown }}" style="position:fixed;inset:0;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;font-family:'JetBrains Mono',ui-monospace,monospace;color:#15140f;background-color:#f4f3ee;background-image:radial-gradient(rgba(21,20,15,.13) 1.4px, transparent 1.4px);background-size:{{ gridSize }}px {{ gridSize }}px;background-position:{{ panX }}px {{ panY }}px;cursor:{{ bgCursor }}">
+  <div style="position:absolute;left:0;top:0;width:0;height:0;transform:translate({{ panX }}px,{{ panY }}px) scale({{ zoom }});transform-origin:0 0">
+
+    <sc-for list="{{ lines }}" as="ln" hint-placeholder-count="0">
+      <div style="position:absolute;left:{{ ln.x }}px;top:{{ ln.y }}px;width:{{ ln.w }}px;height:0;border-top:{{ ln.bw }}px {{ ln.ls }} rgba(21,20,15,{{ ln.op }});transform:rotate({{ ln.a }}deg);transform-origin:0 0;pointer-events:none"></div>
+    </sc-for>
+
+    <sc-for list="{{ furn }}" as="fu" hint-placeholder-count="0">
+      <div style="position:absolute;left:{{ fu.x }}px;top:{{ fu.y }}px;width:0;height:0;z-index:{{ fu.z }}">
+        <sc-if value="{{ fu.showRange }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;left:{{ fu.rL }}px;top:{{ fu.rL }}px;width:{{ fu.rD }}px;height:{{ fu.rD }}px;border-radius:50%;border:2px dashed rgba(21,20,15,.22);background:rgba(21,20,15,.03);pointer-events:none"></div>
+        </sc-if>
+        <div onPointerDown="{{ fu.down }}" style="position:absolute;left:-24px;top:-24px;width:48px;height:48px;cursor:grab;transform:scale({{ fu.sc }})">
+          <dc-import name="FurnitureIcon" kind="{{ fu.kind }}" t="{{ fu.t }}" hint-size="48px,48px"></dc-import>
+        </div>
+        <div style="position:absolute;left:0;top:29px;transform:translateX(-50%);white-space:nowrap;text-align:center;pointer-events:none">
+          <div style="font-size:9px;font-weight:800;letter-spacing:.1em">{{ fu.label }}</div>
+          <div style="font-size:8.5px;font-weight:600;color:#6b6a62;margin-top:1px">{{ fu.sub }}</div>
+        </div>
+      </div>
+    </sc-for>
+
+    <sc-for list="{{ ghosts }}" as="g" hint-placeholder-count="0">
+      <div onPointerDown="{{ g.down }}" style="position:absolute;left:{{ g.l }}px;top:{{ g.t }}px;width:130px;height:96px;border:2px dashed rgba(21,20,15,.18);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:300;color:rgba(21,20,15,.25);cursor:pointer">+</div>
+    </sc-for>
+
+    <sc-for list="{{ rooms }}" as="r" hint-placeholder-count="0">
+      <div style="position:absolute;left:{{ r.l }}px;top:{{ r.t }}px;width:{{ r.w }}px;height:{{ r.h }}px;transform:scale({{ r.sc }});opacity:{{ r.op }};z-index:{{ r.z }}">
+        <sc-if value="{{ r.ripple }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;inset:0;border-radius:18px;border:2px solid rgba(21,20,15,{{ r.ro }});transform:scale({{ r.rs }});pointer-events:none"></div>
+        </sc-if>
+        <div onPointerDown="{{ r.down }}" style="position:absolute;inset:0;border-radius:16px;background:{{ r.bg }};border:{{ r.border }};box-shadow:{{ r.shadow }};cursor:grab"></div>
+        <div style="position:absolute;inset:6px;border-radius:11px;border:1px solid rgba(21,20,15,.08);pointer-events:none"></div>
+        <div onPointerDown="{{ r.down }}" style="position:absolute;left:50%;top:-23px;transform:translateX(-50%);white-space:nowrap;font-weight:800;font-size:11px;letter-spacing:.1em;background:#f4f3ee;padding:1px 6px;cursor:grab;color:{{ r.labelColor }}">{{ r.name }}<span style="color:#6b6a62;font-weight:600">{{ r.meta }}</span><sc-if value="{{ r.hasEq }}" hint-placeholder-val="{{ false }}"><span style="margin-left:6px;font-size:8.5px;font-weight:800;letter-spacing:.06em;padding:1px 4px;border-radius:4px;background:#15140f;color:#f4f3ee">{{ r.eqTag }}</span></sc-if></div>
+        <sc-if value="{{ r.empty }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:600;color:#9a988f;letter-spacing:.04em;pointer-events:none;text-align:center;padding:0 12px">drag agents here</div>
+        </sc-if>
+        <div style="position:absolute;left:0;right:0;bottom:-7px;display:flex;justify-content:center;gap:3px;pointer-events:none">
+          <sc-for list="{{ r.moodDots }}" as="md" hint-placeholder-count="0">
+            <span style="width:{{ md.w }}px;height:6px;border-radius:3px;background:{{ md.c }};border:1.5px solid #15140f"></span>
+          </sc-for>
+        </div>
+        <sc-for list="{{ r.desks }}" as="d" hint-placeholder-count="0">
+          <div style="position:absolute;left:{{ d.l }}px;top:{{ d.t }}px;width:20px;height:5px;border-radius:2px;background:{{ d.c }};pointer-events:none"></div>
+        </sc-for>
+        <sc-for list="{{ r.agents }}" as="a" hint-placeholder-count="0">
+          <div onPointerDown="{{ a.down }}" onPointerEnter="{{ a.enter }}" onPointerLeave="{{ a.leave }}" style="position:absolute;left:{{ a.l }}px;top:{{ a.t }}px;width:36px;height:36px;margin:-18px 0 0 -18px;cursor:grab;opacity:{{ a.op }};z-index:{{ a.z }}">
+            <sc-if value="{{ a.sel }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;left:4px;top:{{ a.ringT }}px;width:28px;height:28px;border-radius:9px;border:2px solid rgba(21,20,15,.4)"></div>
+            </sc-if>
+            <sc-if value="{{ a.working }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;left:0;right:0;top:{{ a.dotT }}px;display:flex;justify-content:center;gap:2px">
+                <span style="width:3px;height:3px;border-radius:50%;background:#15140f;opacity:{{ a.d1 }}"></span>
+                <span style="width:3px;height:3px;border-radius:50%;background:#15140f;opacity:{{ a.d2 }}"></span>
+              </div>
+            </sc-if>
+            <sc-if value="{{ a.isFlow }}" hint-placeholder-val="{{ false }}">
+              <span style="position:absolute;left:2px;top:{{ a.sT1 }}px;font-size:7px;line-height:1;color:#15140f;opacity:{{ a.s1 }}">✦</span>
+              <span style="position:absolute;left:28px;top:{{ a.sT2 }}px;font-size:6px;line-height:1;color:#15140f;opacity:{{ a.s2 }}">✦</span>
+              <span style="position:absolute;left:29px;top:{{ a.sT3 }}px;font-size:5px;line-height:1;color:#15140f;opacity:{{ a.s3 }}">✦</span>
+            </sc-if>
+            <sc-if value="{{ a.isFrus }}" hint-placeholder-val="{{ false }}">
+              <span style="position:absolute;left:14px;top:{{ a.puffT }}px;width:4px;height:4px;border-radius:50%;border:1px solid #15140f;opacity:{{ a.puffO }}"></span>
+            </sc-if>
+            <sc-if value="{{ a.hasAura }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;left:3px;top:24px;width:30px;height:10px;border-radius:50%;background:{{ a.mc }};opacity:{{ a.auraOp }};transform:scale({{ a.auraSc }});pointer-events:none"></div>
+            </sc-if>
+            <div style="position:absolute;left:{{ a.bodyL }}px;top:{{ a.bodyT }}px;width:17px;height:17px;border-radius:5px;background:#15140f;box-shadow:0 2px 0 rgba(21,20,15,.16);transform:rotate({{ a.rot }}deg) scale({{ a.bsc }})">
+              <div style="position:absolute;left:{{ a.e1L }}px;top:{{ a.eT }}px;width:{{ a.eW }}px;height:{{ a.eH }}px;border-radius:1px;background:#f4f3ee"></div>
+              <div style="position:absolute;left:{{ a.e2L }}px;top:{{ a.eT }}px;width:{{ a.eW }}px;height:{{ a.eH }}px;border-radius:1px;background:#f4f3ee"></div>
+              <sc-if value="{{ a.isFrus }}" hint-placeholder-val="{{ false }}">
+                <div style="position:absolute;left:{{ a.b1L }}px;top:{{ a.browT }}px;width:4px;height:1.3px;background:#f4f3ee;transform:rotate(24deg)"></div>
+                <div style="position:absolute;left:{{ a.b2L }}px;top:{{ a.browT }}px;width:4px;height:1.3px;background:#f4f3ee;transform:rotate(-24deg)"></div>
+              </sc-if>
+              <sc-if value="{{ a.isOver }}" hint-placeholder-val="{{ false }}">
+                <div style="position:absolute;left:15px;top:{{ a.swT }}px;width:3.5px;height:3.5px;border-radius:0 50% 50% 50%;background:#fbfaf5;border:1px solid #15140f;transform:rotate(45deg);opacity:{{ a.swO }}"></div>
+              </sc-if>
+            </div>
+            <sc-if value="{{ a.showName }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;left:50%;top:{{ a.nameT }}px;transform:translateX(-50%);font-size:7.5px;font-weight:700;letter-spacing:.08em;color:#6b6a62;white-space:nowrap;pointer-events:none">{{ a.name }}</div>
+            </sc-if>
+            <sc-if value="{{ a.hasIcon }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;left:18px;bottom:{{ a.icB }}px;transform:translateX(-50%) scale({{ a.icSc }});transform-origin:50% 100%;pointer-events:none;display:flex;flex-direction:column;align-items:center">
+                <div style="width:17px;height:17px;border-radius:50%;background:{{ a.mc }};border:1.5px solid #15140f;display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:800;line-height:1;color:#15140f;box-shadow:0 2px 0 rgba(21,20,15,.15)">{{ a.icon }}</div>
+                <span style="width:3px;height:3px;border-radius:50%;background:#15140f;margin-top:1.5px"></span>
+              </div>
+            </sc-if>
+            <sc-if value="{{ a.hasBubble }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;left:18px;bottom:{{ a.bubB }}px;transform:translateX(-50%);pointer-events:none;display:flex;flex-direction:column;align-items:center">
+                <div style="width:max-content;max-width:132px;padding:3px 6px 4px;background:#fbfaf5;border:1.5px solid #15140f;border-radius:8px;font-size:7.5px;line-height:1.35;font-weight:600;color:#15140f;text-align:center;box-shadow:0 2px 0 rgba(21,20,15,.1);text-wrap:pretty"><span style="font-weight:800;letter-spacing:.06em">{{ a.moodTag }}</span> {{ a.thought }}</div>
+                <span style="width:4px;height:4px;border-radius:50%;border:1.2px solid #15140f;background:#fbfaf5;margin-top:2px"></span>
+                <span style="width:2.5px;height:2.5px;border-radius:50%;background:#15140f;margin-top:1px"></span>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </sc-for>
+
+    <sc-for list="{{ sups }}" as="s" hint-placeholder-count="0">
+      <div style="position:absolute;left:{{ s.x }}px;top:{{ s.y }}px;width:0;height:0;z-index:{{ s.z }};opacity:{{ s.op }}">
+        <div style="position:absolute;left:{{ s.haloL }}px;top:{{ s.haloT }}px;width:{{ s.halo }}px;height:{{ s.halo }}px;border-radius:50%;border:2px {{ s.haloStyle }} rgba(21,20,15,{{ s.haloOp }});background:{{ s.haloBg }};transform:scale({{ s.hs }});pointer-events:none"></div>
+        <div onPointerDown="{{ s.down }}" style="position:absolute;left:{{ s.bl }}px;top:{{ s.bt }}px;width:{{ s.size }}px;height:{{ s.size }}px;cursor:grab;transform:scale({{ s.sc }})">
+          <div style="position:absolute;left:{{ s.ear1L }}px;top:{{ s.earT }}px;width:{{ s.earW }}px;height:{{ s.earH }}px;background:#15140f;border-radius:5px 5px 0 0;transform:rotate(-6deg)"></div>
+          <div style="position:absolute;left:{{ s.ear2L }}px;top:{{ s.earT }}px;width:{{ s.earW }}px;height:{{ s.earH }}px;background:#15140f;border-radius:5px 5px 0 0;transform:rotate(6deg)"></div>
+          <div style="position:absolute;inset:0;background:#15140f;border-radius:{{ s.rad }}px;box-shadow:0 5px 0 rgba(21,20,15,.16)"></div>
+          <div style="position:absolute;left:{{ s.e1L }}px;top:{{ s.eT }}px;width:{{ s.eW }}px;height:{{ s.eH }}px;border-radius:2px;background:#f4f3ee"></div>
+          <div style="position:absolute;left:{{ s.e2L }}px;top:{{ s.eT }}px;width:{{ s.eW }}px;height:{{ s.eH }}px;border-radius:2px;background:#f4f3ee"></div>
+          <sc-if value="{{ s.hasBadge }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;right:-13px;top:-11px;min-width:22px;height:22px;padding:0 5px;border-radius:11px;background:#15140f;border:2.5px solid #f4f3ee;color:#f4f3ee;font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center;transform:scale({{ s.badgeSc }})">{{ s.badge }}</div>
+          </sc-if>
+        </div>
+        <div style="position:absolute;left:0;top:{{ s.labT }}px;transform:translateX(-50%);text-align:center;white-space:nowrap;pointer-events:none">
+          <div style="font-weight:800;font-size:{{ s.nameSize }}px;letter-spacing:.14em">{{ s.name }}</div>
+          <div style="font-weight:600;font-size:9.5px;letter-spacing:.1em;color:#6b6a62;margin-top:2px">{{ s.role }}</div>
+        </div>
+      </div>
+    </sc-for>
+
+    <sc-for list="{{ pulses }}" as="p" hint-placeholder-count="0">
+      <div style="position:absolute;left:{{ p.x }}px;top:{{ p.y }}px;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:5px;background:#15140f;box-shadow:0 0 0 5px rgba(21,20,15,.1);pointer-events:none;z-index:50"></div>
+    </sc-for>
+
+    <sc-if value="{{ hasDragAg }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;left:{{ dragAg.x }}px;top:{{ dragAg.y }}px;width:0;height:0;z-index:100;pointer-events:none">
+        <div style="position:absolute;left:-12px;top:-12px;width:24px;height:24px;border-radius:7px;background:#15140f;box-shadow:0 10px 14px rgba(21,20,15,.22);transform:rotate({{ dragAg.rot }}deg)">
+          <div style="position:absolute;left:6px;top:8px;width:3px;height:5px;border-radius:1px;background:#f4f3ee"></div>
+          <div style="position:absolute;left:15px;top:8px;width:3px;height:5px;border-radius:1px;background:#f4f3ee"></div>
+        </div>
+        <div style="position:absolute;left:18px;top:14px;white-space:nowrap;font-size:10px;font-weight:800;letter-spacing:.08em;background:#15140f;color:#f4f3ee;padding:3px 7px;border-radius:6px">{{ dragAg.name }} <span style="font-weight:500;opacity:.75">{{ dragAg.target }}</span></div>
+      </div>
+    </sc-if>
+  </div>
+</div>
+
+<div style="position:fixed;left:22px;top:20px;display:flex;flex-direction:column;gap:6px;font-family:'JetBrains Mono',monospace;pointer-events:none;z-index:500">
+  <div style="display:flex;align-items:center;gap:9px">
+    <span style="width:11px;height:11px;background:#15140f;border-radius:3px"></span>
+    <span style="font-weight:800;font-size:13px;letter-spacing:.16em;color:#15140f">THE SYSTEM</span>
+    <span style="font-weight:500;font-size:11px;letter-spacing:.04em;color:#6b6a62;border-left:1px solid #dedcd2;padding-left:9px">live · {{ agentCount }} agents · {{ mgrCount }} managers</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;font-size:9.5px;font-weight:700;letter-spacing:.06em;color:#6b6a62">
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;border:1.5px solid #15140f;background:#3aa865"></span>FLOW</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;border:1.5px solid #15140f;background:#ee7a2f"></span>SWAMPED</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;border:1.5px solid #15140f;background:#e8b923"></span>UNSURE</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;border:1.5px solid #15140f;background:#d63c2f"></span>STUCK</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;border:1.5px solid #15140f;background:#a9b4c4"></span>BORED</span>
+  </div>
+</div>
+
+<div style="position:fixed;left:18px;bottom:{{ ctrlBottom }}px;display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;z-index:500">
+  <button onClick="{{ zoomOut }}" style="width:34px;height:34px;background:#fbfaf5;border:2px solid #15140f;border-radius:9px;font-weight:800;font-size:15px;color:#15140f;cursor:pointer;box-shadow:0 3px 0 rgba(21,20,15,.18)">−</button>
+  <div style="min-width:46px;text-align:center;font-size:11px;font-weight:700;color:#15140f">{{ zoomPct }}%</div>
+  <button onClick="{{ zoomIn }}" style="width:34px;height:34px;background:#fbfaf5;border:2px solid #15140f;border-radius:9px;font-weight:800;font-size:15px;color:#15140f;cursor:pointer;box-shadow:0 3px 0 rgba(21,20,15,.18)">+</button>
+  <button onClick="{{ fit }}" style="height:34px;padding:0 12px;background:#fbfaf5;border:2px solid #15140f;border-radius:9px;font-weight:800;font-size:11px;letter-spacing:.06em;color:#15140f;cursor:pointer;box-shadow:0 3px 0 rgba(21,20,15,.18)">FIT</button>
+  <button onClick="{{ reset }}" style="height:34px;padding:0 12px;background:transparent;border:2px solid rgba(21,20,15,.25);border-radius:9px;font-weight:700;font-size:11px;letter-spacing:.06em;color:#6b6a62;cursor:pointer">RESET</button>
+</div>
+
+<div style="position:fixed;left:{{ dockX }}px;bottom:16px;transform:translateX(-50%);z-index:550;display:flex;align-items:stretch;gap:8px;padding:8px;background:#fbfaf5;border:2.5px solid #15140f;border-radius:16px;box-shadow:0 6px 0 rgba(21,20,15,.12);font-family:'JetBrains Mono',monospace;color:#15140f;user-select:none;-webkit-user-select:none;touch-action:none">
+  <div style="display:flex;flex-direction:column;gap:5px;justify-content:center">
+    <button onClick="{{ addMgr }}" style="height:28px;padding:0 10px;border-radius:8px;border:2px solid #15140f;background:#15140f;color:#f4f3ee;font-weight:800;font-size:10px;letter-spacing:.06em;cursor:pointer;white-space:nowrap">+ MANAGER</button>
+    <button onClick="{{ addTeam }}" style="height:28px;padding:0 10px;border-radius:8px;border:2px solid #15140f;background:transparent;color:#15140f;font-weight:800;font-size:10px;letter-spacing:.06em;cursor:pointer;white-space:nowrap">+ TEAM</button>
+    <div style="font-size:8.5px;font-weight:600;color:#6b6a62;text-align:center;white-space:nowrap">under {{ addTarget }}</div>
+  </div>
+  <div style="width:1.5px;background:#dedcd2;margin:2px 2px"></div>
+  <div style="display:flex;gap:4px">
+    <sc-for list="{{ dock }}" as="dk" hint-placeholder-count="4">
+      <div onPointerDown="{{ dk.down }}" style="width:62px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 2px 4px;border-radius:10px;cursor:grab" style-hover="background:#f1efe7">
+        <dc-import name="FurnitureIcon" kind="{{ dk.kind }}" t="{{ dk.t }}" hint-size="48px,48px"></dc-import>
+        <div style="font-size:8.5px;font-weight:800;letter-spacing:.06em;white-space:nowrap">{{ dk.short }}</div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+
+<sc-if value="{{ hasGhost }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;left:{{ ghost.x }}px;top:{{ ghost.y }}px;z-index:2000;pointer-events:none;transform:translate(-24px,-30px) scale({{ ghost.sc }});font-family:'JetBrains Mono',monospace">
+    <dc-import name="FurnitureIcon" kind="{{ ghost.kind }}" t="{{ ghost.t }}" hint-size="48px,48px"></dc-import>
+    <div style="margin-top:4px;white-space:nowrap;font-size:10px;font-weight:800;letter-spacing:.06em;background:#15140f;color:#f4f3ee;padding:3px 7px;border-radius:6px">{{ ghost.label }}</div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ hasReTag }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;left:{{ reTag.x }}px;top:{{ reTag.y }}px;z-index:2000;pointer-events:none;white-space:nowrap;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:800;letter-spacing:.06em;background:#15140f;color:#f4f3ee;padding:5px 9px;border-radius:7px;box-shadow:0 6px 10px rgba(21,20,15,.2)">{{ reTag.text }}</div>
+</sc-if>
+
+<sc-if value="{{ feedClosed }}" hint-placeholder-val="{{ false }}">
+  <button onClick="{{ toggleFeed }}" style="position:fixed;right:18px;top:16px;z-index:600;display:flex;align-items:center;gap:8px;height:38px;padding:0 14px;background:#fbfaf5;border:2.5px solid #15140f;border-radius:11px;font-family:'JetBrains Mono',monospace;font-weight:800;font-size:11px;letter-spacing:.1em;color:#15140f;cursor:pointer;box-shadow:0 4px 0 rgba(21,20,15,.15)">
+    <span style="width:8px;height:8px;border-radius:50%;background:#15140f;opacity:{{ liveOp }}"></span>PIP → YOU
+  </button>
+</sc-if>
+
+<sc-if value="{{ feedOpen }}" hint-placeholder-val="{{ true }}">
+  <div style="position:fixed;right:16px;top:16px;bottom:16px;width:340px;max-width:calc(100vw - 32px);z-index:600;display:flex;flex-direction:column;background:#f4f3ee;border:3px solid #15140f;border-radius:24px;box-shadow:0 12px 0 rgba(21,20,15,.1);overflow:hidden;font-family:'JetBrains Mono',monospace;color:#15140f">
+    <div style="flex:none;display:flex;align-items:center;gap:11px;padding:14px 16px 13px;background:#fbfaf5;border-bottom:2.5px solid #15140f">
+      <span style="width:30px;height:30px;background:#15140f;border-radius:8px;position:relative;flex:none">
+        <span style="position:absolute;left:8px;top:11px;width:5px;height:6px;background:#f4f3ee;border-radius:1.5px"></span>
+        <span style="position:absolute;left:17px;top:11px;width:5px;height:6px;background:#f4f3ee;border-radius:1.5px"></span>
+      </span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:800;font-size:13px;letter-spacing:.1em">PIP → YOU</div>
+        <div style="font-weight:500;font-size:10.5px;color:#6b6a62;margin-top:2px">{{ teamCount }} teams · {{ mgrCount }} managers · {{ furnCount }} objects</div>
+      </div>
+      <span style="width:9px;height:9px;border-radius:50%;background:#15140f;opacity:{{ liveOp }}"></span>
+      <button onClick="{{ toggleFeed }}" style="width:28px;height:28px;border:2px solid #15140f;border-radius:8px;background:transparent;font-weight:800;font-size:13px;color:#15140f;cursor:pointer">×</button>
+    </div>
+    <div style="flex:1;overflow:auto;padding:14px 14px 30px;display:flex;flex-direction:column;gap:12px">
+      <sc-for list="{{ cards }}" as="c" hint-placeholder-count="3">
+        <div style="flex:none;background:#fbfaf5;border:2.5px solid #15140f;border-radius:14px;padding:12px 14px 13px;box-shadow:0 4px 0 rgba(21,20,15,.12);opacity:{{ c.op }};transform:translateX({{ c.tx }}px)">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px">
+            <span style="display:flex;align-items:center;gap:7px;min-width:0">
+              <span style="flex:none;font-size:9px;font-weight:800;letter-spacing:.08em;padding:2px 6px;border-radius:5px;border:1.5px solid #15140f;background:{{ c.kbg }};color:{{ c.kfg }}">{{ c.kind }}</span>
+              <span style="font-weight:800;font-size:10.5px;letter-spacing:.08em;white-space:nowrap;flex:none">{{ c.path }}</span>
+            </span>
+            <span style="font-weight:600;font-size:10px;color:#6b6a62;flex:none">{{ c.ago }}</span>
+          </div>
+          <div style="font-weight:500;font-size:12.5px;line-height:1.5;text-wrap:pretty"><span style="font-weight:800">{{ c.who }}</span>{{ c.text }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ hasPop }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;left:{{ pop.l }}px;top:{{ pop.t }}px;width:330px;max-height:{{ pop.maxH }}px;overflow:auto;z-index:1000;background:#fbfaf5;border:2.5px solid #15140f;border-radius:16px;box-shadow:0 8px 0 rgba(21,20,15,.12);opacity:{{ pop.op }};transform:translateY({{ pop.ty }}px) scale({{ pop.sc }});transform-origin:{{ pop.origin }};font-family:'JetBrains Mono',monospace;color:#15140f">
+    <div style="position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:11px;padding:13px 14px 12px 16px;background:#fbfaf5;border-bottom:2px solid #15140f">
+      <span style="width:26px;height:26px;background:#15140f;border-radius:7px;position:relative;flex:none">
+        <span style="position:absolute;left:7px;top:9px;width:4px;height:6px;background:#f4f3ee;border-radius:1px"></span>
+        <span style="position:absolute;left:15px;top:9px;width:4px;height:6px;background:#f4f3ee;border-radius:1px"></span>
+      </span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:800;font-size:13px;letter-spacing:.12em">{{ pop.title }}</div>
+        <div style="font-weight:500;font-size:10.5px;color:#6b6a62;margin-top:2px">{{ pop.sub }}</div>
+      </div>
+      <button onClick="{{ closePop }}" style="width:28px;height:28px;border:2px solid #15140f;border-radius:8px;background:transparent;font-weight:800;font-size:13px;color:#15140f;cursor:pointer;flex:none">×</button>
+    </div>
+
+    <sc-if value="{{ pop.hasMood }}" hint-placeholder-val="{{ false }}">
+      <div style="margin:12px 16px 2px;padding:10px 12px;border:2px solid #15140f;border-radius:12px;background:#f4f3ee;display:flex;flex-direction:column;gap:7px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:9.5px;font-weight:800;letter-spacing:.1em;padding:2px 7px;border-radius:5px;border:1.5px solid #15140f;background:{{ pop.moodBg }};color:{{ pop.moodFg }}">{{ pop.moodLabel }}</span>
+          <span style="font-size:10px;color:#6b6a62">{{ pop.moodWhy }}</span>
+        </div>
+        <div style="font-size:12.5px;line-height:1.45;font-weight:600;font-style:italic;text-wrap:pretty">“{{ pop.moodText }}”</div>
+        <sc-if value="{{ pop.hasMoodActs }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <sc-for list="{{ pop.moodActs }}" as="ma" hint-placeholder-count="0">
+              <button onClick="{{ ma.go }}" style="padding:6px 11px;border-radius:8px;border:2px solid {{ ma.bc }};background:{{ ma.bg }};color:{{ ma.fg }};font-weight:800;font-size:10px;letter-spacing:.06em;cursor:pointer">{{ ma.label }}</button>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ pop.hasDesc }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:12px 16px 2px;font-size:12px;line-height:1.5;text-wrap:pretty">{{ pop.desc }}</div>
+    </sc-if>
+
+    <sc-if value="{{ pop.hasEdit }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;gap:8px;padding:12px 16px 2px">
+        <label style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;font-size:9px;font-weight:800;letter-spacing:.1em;color:#6b6a62">NAME
+          <input value="{{ pop.nameVal }}" onChange="{{ pop.onName }}" maxlength="14" style="width:100%;padding:6px 8px;border:2px solid #15140f;border-radius:8px;background:#f4f3ee;font-size:12px;font-weight:800;letter-spacing:.08em;color:#15140f;outline:none">
+        </label>
+        <sc-if value="{{ pop.hasRole }}" hint-placeholder-val="{{ false }}">
+          <label style="flex:1.3;min-width:0;display:flex;flex-direction:column;gap:4px;font-size:9px;font-weight:800;letter-spacing:.1em;color:#6b6a62">ROLE
+            <input value="{{ pop.roleVal }}" onChange="{{ pop.onRole }}" maxlength="18" style="width:100%;padding:6px 8px;border:2px solid #15140f;border-radius:8px;background:#f4f3ee;font-size:12px;font-weight:700;letter-spacing:.06em;color:#15140f;outline:none">
+          </label>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ pop.hasBoss }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:12px 16px 2px">
+        <div style="font-size:10px;font-weight:800;letter-spacing:.1em;margin-bottom:7px">REPORTS TO</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <sc-for list="{{ pop.bossChips }}" as="bc" hint-placeholder-count="0">
+            <button onClick="{{ bc.go }}" style="padding:5px 10px;border-radius:8px;border:2px solid #15140f;background:{{ bc.bg }};color:{{ bc.fg }};font-weight:800;font-size:10px;letter-spacing:.08em;cursor:pointer">{{ bc.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ pop.hasNeeds }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:12px 16px 4px;font-size:10px;font-weight:800;letter-spacing:.1em">NEEDS YOU · {{ pop.needCount }}</div>
+      <sc-for list="{{ pop.needs }}" as="nd" hint-placeholder-count="0">
+        <div style="padding:10px 16px 13px;border-bottom:1px solid #e6e4da;display:flex;flex-direction:column;gap:7px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:#6b6a62">{{ nd.path }}</div>
+          <div style="font-size:12.5px;line-height:1.5;font-weight:500;text-wrap:pretty">{{ nd.text }}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px">
+            <sc-for list="{{ nd.acts }}" as="ac" hint-placeholder-count="0">
+              <button onClick="{{ ac.go }}" style="padding:6px 11px;border-radius:8px;border:2px solid #15140f;background:{{ ac.bg }};color:{{ ac.fg }};font-weight:700;font-size:10.5px;letter-spacing:.04em;cursor:pointer">{{ ac.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+      <sc-if value="{{ pop.noNeeds }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:6px 16px 14px;font-size:12px;color:#6b6a62;line-height:1.5">Nothing needs you right now. The teams have it.</div>
+      </sc-if>
+    </sc-if>
+
+    <sc-if value="{{ pop.hasOpts }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:12px 16px 2px">
+        <div style="font-size:10px;font-weight:800;letter-spacing:.1em;margin-bottom:7px">{{ pop.optsLabel }}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <sc-for list="{{ pop.opts }}" as="op" hint-placeholder-count="0">
+            <button onClick="{{ op.go }}" style="padding:5px 10px;border-radius:8px;border:{{ op.border }};background:{{ op.bg }};color:{{ op.fg }};font-weight:700;font-size:10.5px;letter-spacing:.03em;cursor:pointer">{{ op.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ pop.hasRows }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:14px 16px 6px;font-size:10px;font-weight:800;letter-spacing:.1em">{{ pop.rowsLabel }} · {{ pop.rowCount }}</div>
+      <sc-for list="{{ pop.rows }}" as="rw" hint-placeholder-count="0">
+        <div onClick="{{ rw.go }}" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 16px;border-top:1px solid #e6e4da;cursor:pointer" style-hover="background:#f1efe7">
+          <span style="display:flex;align-items:center;gap:8px;min-width:0">
+            <span style="flex:none;width:10px;height:10px;border-radius:{{ rw.dotR }};border:2px solid #15140f;background:{{ rw.dotBg }}"></span>
+            <span style="font-weight:800;font-size:11.5px;letter-spacing:.08em;white-space:nowrap">{{ rw.name }}</span>
+          </span>
+          <span style="font-size:10.5px;color:#6b6a62;text-align:right">{{ rw.stat }}</span>
+        </div>
+      </sc-for>
+      <sc-if value="{{ pop.noRows }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:2px 16px 8px;font-size:11.5px;color:#9a988f">{{ pop.noRowsText }}</div>
+      </sc-if>
+    </sc-if>
+
+    <sc-if value="{{ pop.isTeam }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:12px 16px 2px">
+        <div style="font-size:10px;font-weight:800;letter-spacing:.1em;margin-bottom:7px">AGENTS · {{ pop.memberCount }}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <sc-for list="{{ pop.members }}" as="mb" hint-placeholder-count="0">
+            <button onClick="{{ mb.go }}" style="display:flex;align-items:center;gap:6px;padding:4px 9px 4px 5px;border-radius:8px;border:1.5px solid #15140f;background:transparent;font-weight:700;font-size:10px;letter-spacing:.06em;color:#15140f;cursor:pointer">
+              <span style="width:12px;height:12px;border-radius:3.5px;background:#15140f"></span>{{ mb.name }}
+            </button>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ pop.hasEquip }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:14px 16px 2px">
+        <div style="font-size:10px;font-weight:800;letter-spacing:.1em;margin-bottom:6px">EQUIPPED WITH</div>
+        <sc-for list="{{ pop.equip }}" as="eq" hint-placeholder-count="0">
+          <div onClick="{{ eq.go }}" style="display:flex;gap:9px;align-items:baseline;padding:4px 0;cursor:pointer">
+            <span style="flex:none;font-size:9px;font-weight:800;letter-spacing:.06em;padding:1px 5px;border-radius:4px;background:#15140f;color:#f4f3ee">{{ eq.short }}</span>
+            <span style="flex:1;font-size:11.5px;line-height:1.45;text-wrap:pretty">{{ eq.detail }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-for list="{{ pop.secs }}" as="sc" hint-placeholder-count="0">
+      <div style="padding:12px 16px 4px">
+        <div style="font-size:10px;font-weight:800;letter-spacing:.1em;margin-bottom:6px">{{ sc.label }} <span style="color:#6b6a62;font-weight:600">· {{ sc.n }}</span></div>
+        <sc-for list="{{ sc.items }}" as="it" hint-placeholder-count="0">
+          <div style="display:flex;gap:9px;align-items:baseline;padding:4px 0">
+            <span style="flex:none;width:12px;font-size:10px;font-weight:800;opacity:{{ it.mOp }};color:{{ it.color }}">{{ it.mark }}</span>
+            <span style="flex:1;font-size:12px;line-height:1.45;color:{{ it.color }};text-wrap:pretty">{{ it.text }}</span>
+            <sc-if value="{{ it.hasTag }}" hint-placeholder-val="{{ false }}">
+              <span style="flex:none;font-size:9px;font-weight:700;letter-spacing:.06em;color:#6b6a62">{{ it.tag }}</span>
+            </sc-if>
+          </div>
+        </sc-for>
+        <sc-if value="{{ sc.empty }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:11.5px;color:#9a988f;padding:2px 0 4px 21px">—</div>
+        </sc-if>
+      </div>
+    </sc-for>
+
+    <sc-if value="{{ pop.hasActs }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;padding:14px 16px 4px">
+        <sc-for list="{{ pop.acts }}" as="pa" hint-placeholder-count="0">
+          <button onClick="{{ pa.go }}" style="padding:6px 11px;border-radius:8px;border:2px solid {{ pa.bc }};background:{{ pa.bg }};color:{{ pa.fg }};font-weight:800;font-size:10px;letter-spacing:.06em;cursor:pointer">{{ pa.label }}</button>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ pop.hasHint }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:10px;padding:10px 16px 12px;border-top:1px dashed rgba(21,20,15,.2);font-size:10.5px;color:#6b6a62;line-height:1.45">{{ pop.hint }}</div>
+    </sc-if>
+  </div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;simSpeed&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;slow&quot;,&quot;normal&quot;,&quot;fast&quot;],&quot;default&quot;:&quot;normal&quot;,&quot;tsType&quot;:&quot;'slow'|'normal'|'fast'&quot;},&quot;alwaysShowNames&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;thoughts&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;icons&quot;,&quot;always&quot;,&quot;off&quot;],&quot;default&quot;:&quot;icons&quot;,&quot;tsType&quot;:&quot;'icons'|'always'|'off'&quot;}}">
+const KEY = 'the-system-live-v4';
+const cap = x => x ? x[0].toUpperCase() + x.slice(1) : x;
+const BLOCKERS = {
+  fin: ['the Amex login expired', 'RE-AUTH AMEX'], sched: ['two invites overlap at 3pm', 'PICK ONE'], mkt: ['the exchange API is rate-limiting me', 'RETRY'],
+  fam: ['the school portal rejected the file', 'RETRY UPLOAD'], pets: ['the vet\u2019s booking site is down', 'CALL INSTEAD'], ins: ['the insurer wants a policy number', 'SEND IT'],
+  tax: ['last year\u2019s W-2 is missing', 'UPLOAD W-2'], groc: ['your usual store is out of oat milk', 'PICK SUBSTITUTE'], _: ['a login expired', 'RE-AUTH'],
+};
+const FEARS = {
+  fin: 'moving $2,000 into savings', sched: 'declining your boss\u2019s invite', mkt: 'selling at a small loss', fam: 'sharing grades with the school',
+  pets: 'switching to a cheaper vet', ins: 'sending your details to 3 insurers', tax: 'claiming the home office', groc: 'going $40 over budget', _: 'doing this without asking',
+};
+const MOOD = {
+  working: { label: 'WORKING', tag: '', c: '#15140f', icon: '' }, flow: { label: 'IN FLOW', tag: 'FLOW', c: '#3aa865', icon: '\u2726' },
+  overwhelmed: { label: 'OVERWHELMED', tag: 'SWAMPED', c: '#ee7a2f', icon: '' }, bored: { label: 'BORED', tag: 'BORED', c: '#a9b4c4', icon: 'z' },
+  frustrated: { label: 'FRUSTRATED', tag: 'STUCK', c: '#d63c2f', icon: '!' }, stalled: { label: 'STALLED', tag: 'UNSURE', c: '#e8b923', icon: '?' },
+  pending: { label: 'WAITING', tag: '', c: 'rgba(21,20,15,.2)', icon: '' },
+};
+const cl = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const outBack = p => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); };
+const outCubic = p => 1 - Math.pow(1 - p, 3);
+const inOutSine = p => -(Math.cos(Math.PI * p) - 1) / 2;
+const inOutCubic = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const NOW = () => performance.now() / 1000;
+const FR = 190;
+const MGR_NAMES = ['IVY', 'REX', 'MOSS', 'LUNA', 'KIT', 'JUNO', 'FERN', 'BO', 'SAGE', 'NIX'];
+
+const FT = {
+  mcp:   { name: 'MCP RACK', short: 'MCP', desc: 'Plugs nearby agents into your tools so they can act, not just draft.', optsLabel: 'CONNECTORS', opts: ['Gmail', 'Drive', 'Calendar', 'Bank', 'Slack'] },
+  db:    { name: 'DATABASE', short: 'DB', desc: 'Shared memory. Nearby agents can query history before they decide.', optsLabel: 'TABLES', opts: ['Transactions', 'Receipts', 'Contacts', 'Health records'] },
+  books: { name: 'BOOKSHELF', short: 'CONTEXT', desc: 'Context about how you like things done. Nearby agents read it first.', optsLabel: 'SHELVES', opts: ['House rules', 'Preferences', 'Past decisions', 'Family info'] },
+  board: { name: 'STRATEGY BOARD', short: 'GRAPH', desc: 'How the team reasons through work. Changes how tasks get broken down.', optsLabel: 'STRATEGIES', opts: ['Plan → act → check', 'Graph of subtasks', 'Debate, then decide', 'Ask before acting'] },
+};
+const FT_KEYS = ['mcp', 'db', 'books', 'board'];
+
+const SUPS = [
+  ['pip', 'PIP', 'PRIME SUPERVISOR', 540, 115, 58, null],
+  ['ada', 'ADA', 'CAPITAL', 290, 385, 42, 'pip'],
+  ['otto', 'OTTO', 'HOME & LIFE', 790, 385, 42, 'pip'],
+];
+
+const TEAMS = [
+  ['sched', 'SCHEDULE', 'pip', 130, 250, 'active', ['Tidy next week\u2019s calendar', 'Confirm tomorrow\u2019s appointments', 'Prep notes for the next call'], [
+    ['CAL', 'calendar', 'Move Thursday\u2019s dentist to 8:30am', ['Find a slot for the quarterly review', 'Block focus time next week'], ['Confirm the 4:00pm supplier meeting']],
+    ['BRIEF', 'meeting prep', 'Pull 5 bullets for the supplier meeting', ['Draft the Monday standup agenda'], ['Summarize last week\u2019s calls']],
+  ]],
+  ['fin', 'FINANCE', 'ada', 120, 650, 'active', ['Reconcile this week\u2019s transactions', 'Check for new recurring charges', 'Update the savings tracker'], [
+    ['TALLY', 'bookkeeping', 'Categorize 38 September receipts', ['Reconcile the business card statement'], ['Upload monthly revenue files to Drive']],
+    ['PENNY', 'budgets', 'Compare savings vs. last month', ['Flag subscriptions unused for 60 days'], ['Set the October grocery budget']],
+    ['CHECK', 'audits', 'Scan the Amex bill for duplicate charges', ['Archive 2025 invoices'], ['Get a $42 double charge refunded'], { blocked: { text: 'the Amex login expired', fix: 'RE-AUTH AMEX' } }],
+    ['NOVA', 'forecasts', 'Project Q4 cash flow', ['Model the new car payment', 'Forecast holiday spending', 'Stress-test a 3-month income dip', 'Compare mortgage refi offers', 'Plan the Q1 tax set-aside'], ['Refresh the runway sheet']],
+  ]],
+  ['mkt', 'MARKETS', 'ada', 290, 790, 'active', ['Rebalance toward target weights', 'Scan today\u2019s movers', 'Log yesterday\u2019s trades'], [
+    ['QUANT', 'trading', 'Watch BTC for the rebalance trigger', ['Backtest the weekly DCA plan'], ['Close the ETH position for +$150'], { flowSeed: true }],
+    ['SCOUT', 'research', 'Read this week\u2019s 3 earnings calls', ['Shortlist dividend ETFs'], ['Send the Friday market digest']],
+    ['HEDGE', 'risk', 'Set stop-losses on new positions', ['Review the portfolio risk score'], ['Trim tech exposure to 30%']],
+  ]],
+  ['fam', 'FAMILY', 'otto', 630, 650, 'active', ['Check the school newsletter', 'Sync the family calendar', 'Restock household basics'], [
+    ['SCHOOL', 'school', 'Package test results for the school portal', ['Book a parent-teacher slot'], ['Pay the field trip fee']],
+    ['NEST', 'home', 'Plan Saturday\u2019s birthday party', ['Order a gift for grandma'], ['Book the bounce house']],
+    ['CARE', 'health', 'Refill the allergy prescription', ['Schedule annual checkups'], ['Renew the library cards']],
+  ]],
+  ['pets', 'PETS', 'otto', 795, 790, 'active', ['Log today\u2019s walks', 'Check flea treatment timing', 'Reorder treats'], [
+    ['VET', 'health', 'Confirm tomorrow\u2019s 9:00am vet visit', ['Compare pet insurance plans'], ['Log the rabies vaccine date']],
+    ['CHOW', 'food', null, [], ['Reorder dog food', 'Switch to grain-free kibble']],
+  ]],
+  ['ins', 'INSURANCE', 'pip', 950, 250, 'active', ['Check for policy updates', 'Review open claim status', 'Compare renewal quotes'], [
+    ['POLICY', 'coverage', 'Read the car policy renewal terms', ['Check home coverage limits'], ['File the windshield claim']],
+    ['QUOTE', 'shopping', 'Collect 3 competing car quotes', ['Estimate a home + auto bundle'], ['Save renewal dates to the calendar'], { fear: 'sending your details to 3 insurers' }],
+  ]],
+  ['tax', 'TAXES', 'ada', 455, 650, 'hidden', ['Log new deductible expenses', 'Check estimated payment status', 'Sort receipts by category'], [
+    ['DEDUCT', 'deductions', 'Map last year\u2019s tax spend', ['Scan 2025 receipts for deductions'], []],
+    ['FILER', 'filing', 'Set quarterly estimate reminders', ['Collect 1099s as they arrive'], []],
+    ['WRITE', 'write-offs', 'Review the home-office write-off', ['Check retirement contribution limits'], []],
+  ]],
+  ['groc', 'GROCERY', 'otto', 960, 650, 'pending', ['Build next week\u2019s list', 'Check pantry stock', 'Compare store prices'], [
+    ['LIST', 'planning', 'Build the weekly list from past orders', ['Add Saturday party snacks'], []],
+    ['CART', 'ordering', 'Fill the cart at your usual store', ['Pick a delivery window'], []],
+    ['DEAL', 'savings', 'Clip this week\u2019s coupons', ['Compare prices across 3 stores'], []],
+  ]],
+];
+
+const NEEDS = [
+  { id: 'n1', team: 'sched', text: 'Supplier meeting at 4:00pm. I pulled 5 bullets to skim first.', acts: [['OPEN BRIEF', 'ack']], ok: 'Brief opened. Good luck at 4:00.' },
+  { id: 'n6', agent: 'fin-check', team: 'fin', kind: 'blocked', text: 'CHECK is stuck: the Amex login expired.', acts: [['RE-AUTH AMEX', 'unblock'], ['LATER', 'skip']] },
+  { id: 'n7', agent: 'ins-quote', team: 'ins', kind: 'fear', text: 'QUOTE wants your OK before sending your details to 3 insurers.', acts: [['GO AHEAD', 'approve'], ['HOLD OFF', 'hold']] },
+  { id: 'n2', team: 'fam', text: 'Your kid\u2019s test results are packaged for the school portal.', acts: [['UPLOAD', 'ack']], ok: 'Uploaded to the school portal.' },
+  { id: 'n3', team: 'ins', text: 'Car insurance renews soon. Should I message your agent to check rates?', acts: [['YES, DO IT', 'ins'], ['NOT NOW', 'skip']] },
+  { id: 'n4', team: 'tax', text: 'Your tax spend last year was steep. Build a team to monitor it and find optimizations?', acts: [['BUILD TEAM', 'tax'], ['LATER', 'skip']] },
+  { id: 'n5', team: 'groc', text: 'Weekly groceries are one step from automated. I\u2019ll always check with you before checkout.', acts: [['SIGN', 'groc'], ['NOT YET', 'skip']] },
+];
+
+function seed() {
+  const sups = {};
+  SUPS.forEach(([id, name, role, x, y, size, boss]) => { sups[id] = { id, name, role, x, y, size, boss }; });
+  const teams = [], agents = [];
+  TEAMS.forEach(([id, name, boss, x, y, state, pool, ags]) => {
+    teams.push({ id, name, boss, x, y, state, pool, pi: 0 });
+    ags.forEach(([n, role, doing, backlog, done, extra]) => agents.push(Object.assign({ id: id + '-' + n.toLowerCase(), name: n, role, team: id, doing, backlog: backlog.slice(), done: done.slice(), blocked: null, fear: null }, extra || {})));
+  });
+  const d = Date.now();
+  const feed = [
+    { id: 'f3', kind: 'DONE', path: 'OTTO \u203a PETS', who: 'VET', text: 'Log the rabies vaccine date', ts: d - 60000 },
+    { id: 'f2', kind: 'DONE', path: 'ADA \u203a MARKETS', who: 'QUANT', text: 'Close the ETH position for +$150', ts: d - 180000 },
+    { id: 'f1', kind: 'DONE', path: 'ADA \u203a FINANCE', who: 'TALLY', text: 'Upload monthly revenue files to Drive (via DATABASE)', ts: d - 300000 },
+  ];
+  const furn = [
+    { id: 'fx-db', type: 'db', x: -60, y: 650, on: [true, true, false, false] },
+    { id: 'fx-mcp', type: 'mcp', x: 10, y: 130, on: [true, false, true, false, false] },
+  ];
+  return { v: 3, sups, teams, agents, furn, needs: NEEDS.map(n => ({ ...n })), feed };
+}
+
+const roomW = n => Math.max(124, 100 + n * 20);
+const roomH = n => 84 + Math.min(Math.max(n, 1), 4) * 9;
+function desks(n, w, h) {
+  const iw = w - 50, ih = h - 46;
+  const cols = n <= 3 ? n : Math.ceil(n / 2);
+  const rows = Math.ceil(n / Math.max(cols, 1));
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const r = Math.floor(i / cols), c = i % cols;
+    out.push([cols > 1 ? -iw / 2 + (c * iw) / (cols - 1) : 0, rows > 1 ? -ih / 2 + (r * ih) / (rows - 1) : -2]);
+  }
+  return out;
+}
+function patrol(pts, t, speed, dwell, phase) {
+  const legs = []; let total = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    const move = Math.max(0.35, Math.hypot(b[0] - a[0], b[1] - a[1]) / speed);
+    legs.push({ a, b, move }); total += dwell + move;
+  }
+  let tt = (((t + phase) % total) + total) % total;
+  for (const L of legs) {
+    if (tt < dwell) return { x: L.a[0], y: L.a[1], working: true };
+    tt -= dwell;
+    if (tt < L.move) { const p = inOutSine(tt / L.move); return { x: lerp(L.a[0], L.b[0], p), y: lerp(L.a[1], L.b[1], p), working: false }; }
+    tt -= L.move;
+  }
+  return { x: pts[0][0], y: pts[0][1], working: true };
+}
+
+class Component extends DCLogic {
+  state = { f: 0 };
+  vpRef = React.createRef();
+  m = this.load() || seed();
+  pan = { x: 0, y: 0 };
+  zoom = 1;
+  sel = null; popAt = 0; drag = null; hover = null; hoverMgr = null; dragPos = null;
+  pts = new Map(); pinch = null; mouse = { x: -999, y: -999 };
+  pulses = []; nextSim = NOW() + 2.5; apos = {}; eqMap = {};
+  showFeed = typeof window !== 'undefined' ? window.innerWidth > 820 : true;
+  dirty = false; lastSave = 0;
+  disp = {}; hoverAgent = null; lastT = 0;
+  _fs = this.m.agents.forEach(a => { if (a.flowSeed) { a.flowUntil = NOW() + 30; a.recent = [NOW() - 8, NOW() - 3]; a.flowSeed = false; } });
+
+  load() {
+    try {
+      const s = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if (!s || (s.v !== 3 && s.v !== 4)) return null;
+      s.teams.forEach(T => { T.born = null; T.fireAt = null; });
+      Object.values(s.sups).forEach(S => { S.born = null; S.recv = null; });
+      s.furn = s.furn || [];
+      s.agents.forEach(a => { a.flowUntil = 0; a.recent = []; });
+      return s;
+    } catch (e) { return null; }
+  }
+  save() { try { localStorage.setItem(KEY, JSON.stringify(this.m)); } catch (e) {} this.dirty = false; this.lastSave = NOW(); }
+
+  componentDidMount() {
+    this.fitView();
+    this._move = e => this.onMove(e);
+    this._up = e => this.onUp(e);
+    this._key = e => {
+      const tag = (e.target && e.target.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA') { if (e.key === 'Escape') e.target.blur(); return; }
+      if (e.key === 'Escape') this.sel = null;
+      if ((e.key === 'f' || e.key === 'F') && !e.metaKey && !e.ctrlKey) this.fitView();
+      this.forceUpdate();
+    };
+    this._wheel = e => this.onWheel(e);
+    window.addEventListener('pointermove', this._move);
+    window.addEventListener('pointerup', this._up);
+    window.addEventListener('pointercancel', this._up);
+    window.addEventListener('keydown', this._key);
+    const attach = () => { const el = this.vpRef.current; if (el) el.addEventListener('wheel', this._wheel, { passive: false }); else requestAnimationFrame(attach); };
+    attach();
+    const loop = () => { this.raf = requestAnimationFrame(loop); this.step(); this.setState(s => ({ f: s.f + 1 })); };
+    loop();
+  }
+  componentWillUnmount() {
+    cancelAnimationFrame(this.raf);
+    window.removeEventListener('pointermove', this._move);
+    window.removeEventListener('pointerup', this._up);
+    window.removeEventListener('pointercancel', this._up);
+    window.removeEventListener('keydown', this._key);
+    if (this.vpRef.current) this.vpRef.current.removeEventListener('wheel', this._wheel);
+  }
+
+  team(id) { return this.m.teams.find(T => T.id === id); }
+  agent(id) { return this.m.agents.find(a => a.id === id); }
+  furnById(id) { return this.m.furn.find(F => F.id === id); }
+  members(T, excl) { return this.m.agents.filter(a => a.team === T.id && a.id !== excl); }
+  feedW() { return this.showFeed && window.innerWidth > 700 ? 372 : 0; }
+  chain(bossId) { const out = []; let k = bossId; while (k && k !== 'pip' && this.m.sups[k]) { out.unshift(this.m.sups[k].name); k = this.m.sups[k].boss; } return out; }
+  pathName(teamId) { const T = this.team(teamId); if (!T) return ''; return this.chain(T.boss).concat([T.name]).join(' \u203a '); }
+  isUnder(a, b) { let k = a; let guard = 0; while (k && guard++ < 50) { if (k === b) return true; k = this.m.sups[k] ? this.m.sups[k].boss : null; } return false; }
+  toWorld(sx, sy) { return { x: (sx - this.pan.x) / this.zoom, y: (sy - this.pan.y) / this.zoom }; }
+  addTargetId() { const s = this.sel; if (s && s.kind === 'sup' && this.m.sups[s.id]) return s.id; if (s && s.kind === 'team') { const T = this.team(s.id); if (T) return T.boss; } return 'pip'; }
+
+  fitView() {
+    const m = this.m; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    const add = (a, b, c, d) => { x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, c); y1 = Math.max(y1, d); };
+    Object.values(m.sups).forEach(s => add(s.x - 60, s.y - 60, s.x + 60, s.y + 70));
+    m.teams.forEach(T => { const n = this.members(T).length, w = roomW(n), h = roomH(n); add(T.x - w / 2, T.y - h / 2 - 30, T.x + w / 2, T.y + h / 2); });
+    m.furn.forEach(F => add(F.x - 40, F.y - 30, F.x + 40, F.y + 50));
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const aw = Math.max(200, vw - this.feedW() - 60), ah = Math.max(200, vh - 220);
+    const bw = x1 - x0, bh = y1 - y0;
+    const z = cl(Math.min(aw / bw, ah / bh), 0.3, 1.3);
+    this.zoom = z;
+    this.pan = { x: 30 + (aw - bw * z) / 2 - x0 * z, y: 74 + (ah - bh * z) / 2 - y0 * z };
+  }
+  zoomAt(sx, sy, f) {
+    const z = this.zoom, nz = cl(z * f, 0.3, 2.6);
+    this.pan = { x: sx - (sx - this.pan.x) * (nz / z), y: sy - (sy - this.pan.y) * (nz / z) };
+    this.zoom = nz;
+  }
+  onWheel(e) {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) this.zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01));
+    else this.pan = { x: this.pan.x - e.deltaX, y: this.pan.y - e.deltaY };
+  }
+
+  nodeDown(e, kind, id) {
+    e.stopPropagation();
+    if (e.button > 0) return;
+    let ox = 0, oy = 0;
+    if (kind === 'team') { const T = this.team(id); ox = T.x; oy = T.y; }
+    else if (kind === 'sup') { const s = this.m.sups[id]; ox = s.x; oy = s.y; }
+    else if (kind === 'furn') { const F = this.furnById(id); ox = F.x; oy = F.y; }
+    else if (kind === 'agent') { const p = this.apos[id] || { x: 0, y: 0 }; ox = p.x; oy = p.y; }
+    this.drag = { kind, id, sx: e.clientX, sy: e.clientY, ox, oy, moved: false };
+  }
+  dockDown(e, type) {
+    e.stopPropagation();
+    if (e.button > 0) return;
+    this.drag = { kind: 'newfurn', type, sx: e.clientX, sy: e.clientY, moved: false };
+    this.mouse = { x: e.clientX, y: e.clientY };
+  }
+  bgDown(e) {
+    this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (this.pts.size === 2) {
+      const [a, b] = [...this.pts.values()];
+      this.pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, z0: this.zoom, p0: { ...this.pan } };
+      this.drag = null;
+    } else {
+      this.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, ox: this.pan.x, oy: this.pan.y, moved: false };
+    }
+  }
+  mgrAt(wx, wy, D) {
+    for (const s of Object.values(this.m.sups)) {
+      if (D.kind === 'sup' && (s.id === D.id || this.isUnder(s.id, D.id))) continue;
+      if (Math.hypot(wx - s.x, wy - s.y) < s.size * 0.95 + 10) return s.id;
+    }
+    return null;
+  }
+  onMove(e) {
+    this.mouse = { x: e.clientX, y: e.clientY };
+    if (this.pts.has(e.pointerId)) this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (this.pinch && this.pts.size >= 2) {
+      const [a, b] = [...this.pts.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const P = this.pinch, nz = cl(P.z0 * d / P.d0, 0.3, 2.6);
+      const wx = (P.mid.x - P.p0.x) / P.z0, wy = (P.mid.y - P.p0.y) / P.z0;
+      this.zoom = nz; this.pan = { x: mid.x - wx * nz, y: mid.y - wy * nz };
+      return;
+    }
+    const D = this.drag; if (!D) return;
+    const dx = e.clientX - D.sx, dy = e.clientY - D.sy;
+    if (!D.moved && Math.hypot(dx, dy) > 4) D.moved = true;
+    if (!D.moved) return;
+    const z = this.zoom, w = this.toWorld(e.clientX, e.clientY);
+    if (D.kind === 'pan') this.pan = { x: D.ox + dx, y: D.oy + dy };
+    else if (D.kind === 'team') { const T = this.team(D.id); T.x = D.ox + dx / z; T.y = D.oy + dy / z; this.hoverMgr = this.mgrAt(w.x, w.y, D); }
+    else if (D.kind === 'sup') { const s = this.m.sups[D.id]; s.x = D.ox + dx / z; s.y = D.oy + dy / z; this.hoverMgr = D.id === 'pip' ? null : this.mgrAt(w.x, w.y, D); }
+    else if (D.kind === 'furn') { const F = this.furnById(D.id); F.x = D.ox + dx / z; F.y = D.oy + dy / z; }
+    else if (D.kind === 'agent') {
+      this.dragPos = { x: D.ox + dx / z, y: D.oy + dy / z, vx: e.movementX || 0 };
+      this.hover = this.teamAt(this.dragPos.x, this.dragPos.y, D.id);
+    }
+  }
+  teamAt(x, y, excl) {
+    for (const T of this.m.teams) {
+      if (T.state !== 'active') continue;
+      const n = this.members(T, excl).length, w = roomW(n) + 20, h = roomH(n) + 30;
+      if (Math.abs(x - T.x) < w / 2 && Math.abs(y - T.y) < h / 2) return T.id;
+    }
+    return null;
+  }
+  onUp(e) {
+    this.pts.delete(e.pointerId);
+    if (this.pinch) { if (this.pts.size < 2) this.pinch = null; this.drag = null; this.forceUpdate(); return; }
+    const D = this.drag; this.drag = null;
+    if (!D) return;
+    if (D.kind === 'newfurn') {
+      const vw = window.innerWidth, vh = window.innerHeight;
+      let w;
+      if (!D.moved) { w = this.toWorld((vw - this.feedW()) / 2 + (Math.random() - .5) * 80, vh / 2 + (Math.random() - .5) * 60); }
+      else if (e.clientY < vh - 120 && e.clientX < vw - this.feedW()) { w = this.toWorld(e.clientX, e.clientY); }
+      if (w) this.placeFurn(D.type, w.x, w.y);
+    } else if (!D.moved) {
+      if (D.kind === 'pan') this.sel = null;
+      else if (D.kind === 'ghost') this.select({ kind: 'sup', id: 'pip' });
+      else this.select({ kind: D.kind, id: D.id });
+    } else {
+      if (D.kind === 'agent') {
+        const a = this.agent(D.id), to = this.hover;
+        if (to && to !== a.team) {
+          const from = this.team(a.team).name;
+          a.team = to;
+          const T = this.team(to); T.fireAt = NOW();
+          this.card('MOVED', this.pathName(to), a.name, ' joined ' + T.name + ' from ' + from + '.');
+        }
+        if (this.dragPos) { const T2 = this.team(a.team); this.disp[a.id] = { team: T2.id, x: this.dragPos.x - T2.x, y: this.dragPos.y - T2.y }; }
+      } else if ((D.kind === 'team' || D.kind === 'sup') && this.hoverMgr) {
+        const target = this.hoverMgr;
+        if (D.kind === 'team') { const T = this.team(D.id); T.x = D.ox; T.y = D.oy; }
+        else { const s = this.m.sups[D.id]; s.x = D.ox; s.y = D.oy; }
+        this.reparent(D.kind, D.id, target);
+      } else if (D.kind === 'furn') {
+        this.announceFurn(this.furnById(D.id));
+      }
+      this.dirty = true;
+    }
+    this.hover = null; this.hoverMgr = null; this.dragPos = null;
+    this.forceUpdate();
+  }
+  select(s) {
+    if (this.sel && this.sel.kind === s.kind && this.sel.id === s.id) { this.sel = null; this.forceUpdate(); return; }
+    this.sel = s; this.popAt = NOW(); this.forceUpdate();
+  }
+
+  inRange(F) { return this.m.teams.filter(T => T.state !== 'hidden' && Math.hypot(F.x - T.x, F.y - T.y) < FR); }
+  announceFurn(F) {
+    if (!F) return;
+    const ts = this.inRange(F).map(T => T.name);
+    const key = ts.join(',');
+    if (key && key !== F.lastAnn) this.card('EQUIP', FT[F.type].name, '', 'Now serving ' + ts.join(', ') + '.');
+    F.lastAnn = key;
+  }
+  placeFurn(type, x, y) {
+    const F = { id: 'fx' + Date.now().toString(36), type, x, y, on: FT[type].opts.map((_, i) => i === 0), born: NOW() };
+    this.m.furn.push(F);
+    this.announceFurn(F);
+    this.sel = { kind: 'furn', id: F.id }; this.popAt = NOW();
+    this.dirty = true;
+  }
+  reparent(kind, id, bossId) {
+    const m = this.m, B = m.sups[bossId]; if (!B) return;
+    if (kind === 'team') {
+      const T = this.team(id); if (!T || T.boss === bossId) return;
+      T.boss = bossId; T.fireAt = NOW(); B.recv = NOW();
+      this.card('ORG', this.pathName(T.id), '', T.name + ' now reports to ' + B.name + '.');
+    } else {
+      const s = m.sups[id]; if (!s || id === 'pip' || s.boss === bossId || bossId === id || this.isUnder(bossId, id)) return;
+      s.boss = bossId; s.recv = NOW(); B.recv = NOW();
+      this.card('ORG', this.chain(bossId).concat([s.name]).join(' \u203a ') || s.name, '', s.name + ' now reports to ' + B.name + '.');
+    }
+    this.dirty = true; this.forceUpdate();
+  }
+  addManager(bossId) {
+    const m = this.m, b = m.sups[bossId] || m.sups.pip;
+    const used = new Set(Object.values(m.sups).map(s => s.name));
+    const name = MGR_NAMES.find(n => !used.has(n)) || ('MGR' + Object.keys(m.sups).length);
+    const id = 'm' + Date.now().toString(36);
+    m.sups[id] = { id, name, role: 'NEW BRANCH', x: b.x + (Math.random() - .5) * 280, y: b.y + 175, size: 40, boss: b.id, born: NOW() };
+    b.recv = NOW();
+    this.card('ORG', name, '', name + ' joined as a manager under ' + b.name + '.');
+    this.sel = { kind: 'sup', id }; this.popAt = NOW(); this.dirty = true; this.forceUpdate();
+  }
+  addTeam(bossId) {
+    const m = this.m, b = m.sups[bossId] || m.sups.pip;
+    const id = 't' + Date.now().toString(36);
+    m.teams.push({ id, name: 'NEW TEAM', boss: b.id, x: b.x + (Math.random() - .5) * 280, y: b.y + 210, state: 'active', pool: ['Review the queue', 'Check in with the lead', 'Tidy up shared notes'], pi: 0, born: NOW() });
+    this.card('ORG', this.pathName(id), '', 'New team floor under ' + b.name + '. Drag agents in to staff it.');
+    this.sel = { kind: 'team', id }; this.popAt = NOW(); this.dirty = true; this.forceUpdate();
+  }
+  deleteManager(id) {
+    const m = this.m, s = m.sups[id]; if (!s || id === 'pip') return;
+    m.teams.forEach(T => { if (T.boss === id) T.boss = s.boss; });
+    Object.values(m.sups).forEach(o => { if (o.boss === id) o.boss = s.boss; });
+    delete m.sups[id];
+    this.card('ORG', s.name, '', s.name + ' retired. Reports moved up to ' + m.sups[s.boss].name + '.');
+    this.sel = null; this.dirty = true; this.forceUpdate();
+  }
+  deleteTeam(id) {
+    const T = this.team(id); if (!T || this.members(T).length) return;
+    this.m.teams = this.m.teams.filter(x => x.id !== id);
+    this.card('ORG', T.name, '', T.name + ' floor removed.');
+    this.sel = null; this.dirty = true; this.forceUpdate();
+  }
+  deleteFurn(id) {
+    const F = this.furnById(id); if (!F) return;
+    this.m.furn = this.m.furn.filter(x => x.id !== id);
+    this.card('EQUIP', FT[F.type].name, '', 'Removed from the floor.');
+    this.sel = null; this.dirty = true; this.forceUpdate();
+  }
+
+  card(kind, path, who, text) {
+    this.m.feed.unshift({ id: 'c' + Date.now() + Math.random().toString(36).slice(2, 6), kind, path, who, text, ts: Date.now() });
+    this.m.feed = this.m.feed.slice(0, 30);
+    this.dirty = true;
+    this.forceUpdate();
+  }
+  act(nd, action) {
+    const t = NOW();
+    this.m.needs = this.m.needs.filter(x => x.id !== nd.id);
+    if (action === 'tax') {
+      const T = this.team('tax'); if (T) { T.state = 'active'; T.born = t; T.fireAt = t + 0.2;
+      this.card('LIVE', this.pathName('tax'), '', 'TAXES team is live with ' + this.members(T).length + ' agents.'); }
+    } else if (action === 'groc') {
+      const T = this.team('groc'); if (T) { T.state = 'active'; T.fireAt = t;
+      this.card('LIVE', this.pathName('groc'), '', 'Signed. GROCERY is running. I\u2019ll check with you before checkout.'); }
+    } else if (action === 'ins') {
+      const a = this.agent('ins-quote'); if (a) a.backlog.unshift('Message your agent about renewal rates');
+      this.card('YOU', this.pathName('ins'), 'QUOTE', ' is messaging your agent about rates.');
+    } else if (nd.agent && (action === 'unblock' || action === 'approve' || action === 'hold')) {
+      const a = this.agent(nd.agent);
+      if (a) { if (action === 'unblock') this.unblock(a); else if (action === 'approve') this.approve(a); else this.hold(a); }
+    } else if (action === 'ack') {
+      this.card('YOU', this.pathName(nd.team), '', nd.ok || 'Marked handled.');
+    }
+    this.dirty = true; this.forceUpdate();
+  }
+  pathPts(teamId) {
+    const T = this.team(teamId); if (!T) return [[0, 0]];
+    const out = [[T.x, T.y]];
+    let k = T.boss, g = 0; while (k && this.m.sups[k] && g++ < 50) { const s = this.m.sups[k]; out.push([s.x, s.y]); k = s.boss; }
+    return out;
+  }
+  step() {
+    const t = NOW();
+    const speed = { slow: 1.8, normal: 1, fast: 0.45 }[this.props.simSpeed || 'normal'] || 1;
+    if (t > this.nextSim) {
+      this.nextSim = t + (2.4 + Math.random() * 2.4) * speed;
+      const dragA = this.drag && this.drag.kind === 'agent' ? this.drag.id : null;
+      const live = this.m.agents.filter(a => { const T = this.team(a.team); return T && T.state === 'active' && a.id !== dragA; });
+      live.forEach(a => { if (!a.doing && a.backlog.length) a.doing = a.backlog.shift(); });
+      const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+      const free = live.filter(a => a.doing && !a.blocked && !a.fear);
+      const nBlk = live.filter(a => a.blocked).length, nFear = live.filter(a => a.fear).length;
+      const r = Math.random();
+      if (r < 0.09 && nBlk < 2 && free.length) this.makeBlocked(pick(free));
+      else if (r < 0.16 && nFear < 2 && free.length) this.makeFear(pick(free));
+      else if (r < 0.40 && live.length) this.inflow(pick(live));
+      else if (free.length) {
+        const wts = free.map(a => 1 + (this.eqMap[a.team] || []).length * 0.9 + ((a.flowUntil || 0) > t ? 1.5 : 0));
+        let q = Math.random() * wts.reduce((x, y) => x + y, 0), i = 0;
+        while (q > wts[i] && i < free.length - 1) { q -= wts[i]; i++; }
+        this.complete(free[i], t);
+      }
+    }
+    this.pulses = this.pulses.filter(p => {
+      if (t - p.at < p.dur) return true;
+      if (this.m.sups.pip) this.m.sups.pip.recv = t;
+      const [k, path, who, text] = p.card;
+      this.card(k, path, who, text);
+      return false;
+    });
+    if (this.dirty && t - this.lastSave > 1.5 && !this.drag) this.save();
+  }
+
+  complete(a, t) {
+    const T = this.team(a.team); if (!T || !a.doing) return;
+    const doneText = a.doing;
+    a.done.unshift(doneText); a.done = a.done.slice(0, 8);
+    a.doing = a.backlog.shift() || null;
+    a.recent = (a.recent || []).filter(x => t - x < 35).concat([t]);
+    if (a.recent.length >= 2) a.flowUntil = t + 16;
+    T.fireAt = t;
+    const eq = this.eqMap[T.id] || [];
+    const via = eq.length ? ' (via ' + eq.map(F => FT[F.type].name).filter((v, j, arr) => arr.indexOf(v) === j).join(', ') + ')' : '';
+    const P = this.pathPts(T.id); let len = 0; for (let j = 0; j < P.length - 1; j++) len += Math.hypot(P[j + 1][0] - P[j][0], P[j + 1][1] - P[j][1]);
+    this.pulses.push({ team: T.id, at: t, dur: cl(len / 420, 0.9, 2.4), card: ['DONE', this.pathName(T.id), a.name, doneText + via] });
+    this.dirty = true;
+  }
+  inflow(a) {
+    const T = this.team(a.team); if (!T || !T.pool.length) return;
+    const task = T.pool[T.pi % T.pool.length]; T.pi++;
+    if (!a.doing && !a.blocked && !a.fear) a.doing = task; else a.backlog.push(task);
+    this.dirty = true;
+  }
+  removeNeeds(aid, kind) { this.m.needs = this.m.needs.filter(n => !(n.agent === aid && n.kind === kind)); }
+  makeBlocked(a) {
+    const [text, fix] = BLOCKERS[a.team] || BLOCKERS._;
+    a.blocked = { text, fix }; this.removeNeeds(a.id, 'blocked');
+    this.m.needs.unshift({ id: 'nb' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'blocked', text: a.name + ' is stuck: ' + text + '.', acts: [[fix, 'unblock'], ['LATER', 'skip']] });
+    this.card('STUCK', this.pathName(a.team), a.name, ' is stuck: ' + text + '.');
+  }
+  makeFear(a) {
+    const f = FEARS[a.team] || FEARS._;
+    a.fear = f; this.removeNeeds(a.id, 'fear');
+    this.m.needs.unshift({ id: 'nf' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'fear', text: a.name + ' wants your OK before ' + f + '.', acts: [['GO AHEAD', 'approve'], ['HOLD OFF', 'hold']] });
+    this.card('ASKS', this.pathName(a.team), a.name, ' wants your OK before ' + f + '.');
+  }
+  unblock(a) { a.blocked = null; this.removeNeeds(a.id, 'blocked'); this.card('YOU', this.pathName(a.team), a.name, ' is unblocked and back at it.'); }
+  approve(a) { a.fear = null; this.removeNeeds(a.id, 'fear'); this.complete(a, NOW()); this.card('YOU', this.pathName(a.team), a.name, ' got your OK and went ahead.'); }
+  hold(a) {
+    a.fear = null; this.removeNeeds(a.id, 'fear');
+    if (a.doing) { const parked = a.doing; a.doing = a.backlog.shift() || null; a.backlog.push(parked); }
+    this.card('YOU', this.pathName(a.team), a.name, ' parked it for later.');
+  }
+  splitLoad(a) {
+    const mates = this.members(this.team(a.team)).filter(o => o.id !== a.id);
+    if (!mates.length || a.backlog.length < 2) return;
+    const n = Math.floor(a.backlog.length / 2), moved = a.backlog.splice(a.backlog.length - n, n), got = {};
+    moved.forEach(task => {
+      const m2 = mates.slice().sort((x, y) => (x.backlog.length + (x.doing ? 1 : 0)) - (y.backlog.length + (y.doing ? 1 : 0)))[0];
+      if (!m2.doing && !m2.blocked && !m2.fear) m2.doing = task; else m2.backlog.push(task);
+      got[m2.name] = 1;
+    });
+    this.card('YOU', this.pathName(a.team), a.name, ' handed ' + n + ' tasks to ' + Object.keys(got).join(', ') + '.');
+  }
+  giveWork(a) { this.inflow(a); this.inflow(a); this.card('YOU', this.pathName(a.team), a.name, ' picked up 2 new tasks.'); }
+  mood(a, t) {
+    if (a.blocked) return 'frustrated';
+    if (a.fear) return 'stalled';
+    if (a.backlog.length >= 4) return 'overwhelmed';
+    if (!a.doing && !a.backlog.length) return 'bored';
+    if ((a.flowUntil || 0) > t) return 'flow';
+    return 'working';
+  }
+  thought(a, md) {
+    switch (md) {
+      case 'flow': return { text: 'On a roll. ' + (a.recent || []).length + ' done back to back.', why: 'finishing fast' };
+      case 'overwhelmed': return { text: (a.backlog.length + (a.doing ? 1 : 0)) + ' things on my plate. Where do I even start?', why: a.backlog.length + ' queued' };
+      case 'bored': return { text: 'Nothing in my queue. Got anything for me?', why: 'empty backlog' };
+      case 'frustrated': return { text: 'Can\u2019t finish this. ' + cap(a.blocked.text) + '.', why: 'blocked' };
+      case 'stalled': return { text: 'Not sure about ' + a.fear + '. Waiting on your OK.', why: 'afraid to proceed' };
+      case 'pending': return { text: 'Ready to start once you sign.', why: 'team not live' };
+      default: return { text: (a.doing || 'Tidying up') + '\u2026', why: 'steady' };
+    }
+  }
+  secs(t, doing, backlog, done) {
+    const mk = (label, items, st) => ({
+      label, n: items.length, empty: items.length === 0,
+      items: items.map(x => ({ text: x.text, tag: x.tag || '', hasTag: !!x.tag, mark: st === 'doing' ? '\u25cf' : st === 'done' ? '\u2713' : '\u25cb', mOp: st === 'doing' ? .3 + .7 * Math.abs(Math.sin(t * 3)) : 1, color: st === 'done' ? '#6b6a62' : '#15140f' })),
+    });
+    return [mk('IN WORK', doing, 'doing'), mk('BACKLOG', backlog, 'backlog'), mk('DONE', done, 'done')];
+  }
+  buildPop(t, vw, vh) {
+    const sel = this.sel, m = this.m, z = this.zoom, P = this.pan;
+    let wx, wy, r;
+    const p = { needs: [], rows: [], members: [], secs: [], acts: [], bossChips: [], equip: [], opts: [] };
+    const btn = (label, go, kind) => ({ label, go, bg: kind === 'primary' ? '#15140f' : 'transparent', fg: kind === 'danger' ? '#9a3b2c' : kind === 'primary' ? '#f4f3ee' : '#15140f', bc: kind === 'danger' ? '#9a3b2c' : '#15140f' });
+    const chips = (cur, list, apply) => list.map(s => ({ label: s.name, bg: s.id === cur ? '#15140f' : 'transparent', fg: s.id === cur ? '#f4f3ee' : '#15140f', go: () => apply(s.id) }));
+    const teamStat = T => { if (T.state === 'hidden') return 'proposed'; if (T.state === 'pending') return 'pending'; const mem = this.members(T); return mem.length + ' agents \u00b7 ' + mem.filter(a => a.doing).length + ' in work'; };
+    const reportRows = id => {
+      const rows = [];
+      Object.values(m.sups).filter(s => s.boss === id).forEach(s => rows.push({ name: s.name, stat: 'manager \u00b7 ' + (m.teams.filter(T => T.boss === s.id).length + Object.values(m.sups).filter(o => o.boss === s.id).length) + ' reports', dotR: '50%', dotBg: '#15140f', go: () => this.select({ kind: 'sup', id: s.id }) }));
+      m.teams.filter(T => T.boss === id).forEach(T => rows.push({ name: T.name, stat: teamStat(T), dotR: '3px', dotBg: T.state === 'active' ? '#fbfaf5' : 'transparent', go: () => T.state === 'hidden' ? this.select({ kind: 'sup', id: 'pip' }) : this.select({ kind: 'team', id: T.id }) }));
+      return rows;
+    };
+    const equipRows = T => (this.eqMap[T.id] || []).map(F => ({ short: FT[F.type].short, detail: FT[F.type].name + ': ' + (FT[F.type].opts.filter((_, i) => F.on[i]).join(', ') || 'nothing switched on'), go: () => this.select({ kind: 'furn', id: F.id }) }));
+
+    if (sel.kind === 'agent') {
+      const a = this.agent(sel.id); if (!a) return null;
+      const pos = (this.dragPos && this.drag && this.drag.id === a.id) ? this.dragPos : this.apos[a.id]; if (!pos) return null;
+      wx = pos.x; wy = pos.y; r = 16;
+      const T = this.team(a.team), pend = T.state === 'pending';
+      p.title = a.name; p.sub = this.pathName(T.id) + ' \u00b7 ' + a.role;
+      p.equip = equipRows(T);
+      const md = pend ? 'pending' : this.mood(a, t), th = this.thought(a, md);
+      p.hasMood = true; p.moodLabel = MOOD[md].label; p.moodWhy = th.why; p.moodText = th.text;
+      p.moodBg = md === 'working' ? '#15140f' : MOOD[md].c; p.moodFg = md === 'working' ? '#f4f3ee' : '#15140f';
+      const mates = this.members(T).filter(o => o.id !== a.id);
+      const wrap = fn => () => { fn(); this.forceUpdate(); };
+      p.moodActs = md === 'frustrated' ? [btn(a.blocked.fix, wrap(() => this.unblock(a)), 'primary')]
+        : md === 'stalled' ? [btn('GO AHEAD', wrap(() => this.approve(a)), 'primary'), btn('HOLD OFF', wrap(() => this.hold(a)))]
+        : md === 'overwhelmed' && mates.length ? [btn('SPLIT LOAD', wrap(() => this.splitLoad(a)), 'primary')]
+        : md === 'bored' ? [btn('GIVE WORK', wrap(() => this.giveWork(a)), 'primary')] : [];
+      p.hasMoodActs = p.moodActs.length > 0;
+      p.secs = this.secs(t, a.doing ? [{ text: a.doing }] : [], a.backlog.map(x => ({ text: x })), a.done.slice(0, 4).map(x => ({ text: x })));
+      p.hint = pend ? 'Waiting on your signature. Open PIP to sign.' : 'Drag me onto another floor to reassign.';
+    } else if (sel.kind === 'team') {
+      const T = this.team(sel.id); if (!T) return null;
+      const mem = this.members(T); wx = T.x; wy = T.y; r = roomW(mem.length) / 2;
+      p.title = T.name; p.sub = (this.chain(T.boss).join(' \u203a ') || 'PIP') + ' \u00b7 ' + mem.length + ' agents';
+      p.hasEdit = true; p.nameVal = T.name; p.onName = e => { T.name = (e.target.value || '').toUpperCase(); this.dirty = true; this.forceUpdate(); };
+      p.hasBoss = true; p.bossChips = chips(T.boss, Object.values(m.sups), id => this.reparent('team', T.id, id));
+      p.isTeam = mem.length > 0; p.memberCount = mem.length;
+      const moods = {};
+      p.members = mem.map(a => { const md = T.state === 'pending' ? 'pending' : this.mood(a, t); moods[md] = (moods[md] || 0) + 1; return { name: a.name + (MOOD[md].tag ? ' \u00b7 ' + MOOD[md].tag : ''), go: () => this.select({ kind: 'agent', id: a.id }) }; });
+      if (mem.length) { p.hasDesc = true; p.desc = 'Mood: ' + Object.keys(moods).map(k => moods[k] + ' ' + MOOD[k].label.toLowerCase()).join(' \u00b7 '); }
+      p.equip = equipRows(T);
+      const doing = [], backlog = [], done = [];
+      mem.forEach(a => { if (a.doing) doing.push({ text: a.doing, tag: a.name }); a.backlog.forEach(x => backlog.push({ text: x, tag: a.name })); a.done.slice(0, 2).forEach(x => done.push({ text: x, tag: a.name })); });
+      if (mem.length) p.secs = this.secs(t, doing, backlog, done.slice(0, 6));
+      if (!mem.length) p.acts = [btn('DELETE FLOOR', () => this.deleteTeam(T.id), 'danger')];
+      p.hint = T.state === 'pending' ? 'Pending your signature. Open PIP to sign.' : mem.length ? 'Drag the floor onto a manager to change who it reports to.' : 'Empty floor. Drag agents in from other teams to staff it.';
+    } else if (sel.kind === 'furn') {
+      const F = this.furnById(sel.id); if (!F) return null;
+      const D = FT[F.type]; wx = F.x; wy = F.y; r = 26;
+      const ts = this.inRange(F);
+      p.title = D.name; p.sub = ts.length ? 'serving ' + ts.length + (ts.length === 1 ? ' team' : ' teams') : 'not near any team';
+      p.hasDesc = true; p.desc = D.desc;
+      p.hasOpts = true; p.optsLabel = D.optsLabel;
+      p.opts = D.opts.map((o, i) => ({ label: (F.on[i] ? '\u2713 ' : '+ ') + o, bg: F.on[i] ? '#15140f' : 'transparent', fg: F.on[i] ? '#f4f3ee' : '#15140f', border: F.on[i] ? '2px solid #15140f' : '2px dashed rgba(21,20,15,.4)', go: () => { F.on[i] = !F.on[i]; this.dirty = true; this.forceUpdate(); } }));
+      p.hasRows = true; p.rowsLabel = 'IN RANGE'; p.rowCount = ts.length; p.noRows = !ts.length; p.noRowsText = 'Drag it close to a team floor.';
+      p.rows = ts.map(T => ({ name: T.name, stat: teamStat(T), dotR: '3px', dotBg: '#fbfaf5', go: () => this.select({ kind: 'team', id: T.id }) }));
+      p.acts = [btn('REMOVE', () => this.deleteFurn(F.id), 'danger')];
+      p.hint = 'Agents on floors inside the dashed ring walk over to use it and finish work faster.';
+    } else {
+      const s = m.sups[sel.id]; if (!s) return null;
+      wx = s.x; wy = s.y; r = s.size * 0.9;
+      p.title = s.name;
+      const rows = reportRows(s.id);
+      p.hasRows = true; p.rowsLabel = 'DIRECT REPORTS'; p.rows = rows; p.rowCount = rows.length; p.noRows = !rows.length; p.noRowsText = 'No reports yet. Drop a team or manager on ' + s.name + '.';
+      if (s.id === 'pip') {
+        p.sub = 'PRIME SUPERVISOR \u00b7 ' + m.teams.filter(T => T.state === 'active').length + ' teams running';
+        p.hasNeeds = true; p.needCount = m.needs.length; p.noNeeds = m.needs.length === 0;
+        p.needs = m.needs.map(nd => ({
+          path: this.pathName(nd.team), text: nd.text,
+          acts: nd.acts.map(([label, action], i) => ({ label, bg: i === 0 ? '#15140f' : 'transparent', fg: i === 0 ? '#f4f3ee' : '#15140f', go: () => this.act(nd, action) })),
+        }));
+        p.acts = [btn('+ MANAGER', () => this.addManager('pip'), 'primary'), btn('+ TEAM', () => this.addTeam('pip'))];
+        p.hint = 'Everything your teams can\u2019t decide alone lands here.';
+      } else {
+        p.sub = s.role + ' \u00b7 manager';
+        p.hasEdit = true; p.hasRole = true; p.nameVal = s.name; p.roleVal = s.role;
+        p.onName = e => { s.name = (e.target.value || '').toUpperCase(); this.dirty = true; this.forceUpdate(); };
+        p.onRole = e => { s.role = (e.target.value || '').toUpperCase(); this.dirty = true; this.forceUpdate(); };
+        p.hasBoss = true;
+        p.bossChips = chips(s.boss, Object.values(m.sups).filter(o => o.id !== s.id && !this.isUnder(o.id, s.id)), id => this.reparent('sup', s.id, id));
+        p.acts = [btn('+ SUB-MANAGER', () => this.addManager(s.id), 'primary'), btn('+ TEAM', () => this.addTeam(s.id)), btn('RETIRE', () => this.deleteManager(s.id), 'danger')];
+        p.hint = 'Drag onto another manager to move this whole branch.';
+      }
+    }
+    p.moodActs = p.moodActs || []; p.hasEquip = p.equip.length > 0; p.hasActs = p.acts.length > 0; p.hasHint = !!p.hint;
+    const sx = P.x + wx * z, sy = P.y + wy * z, rr = r * z, W = 330, fw = this.feedW();
+    let left = sx + rr + 18, origin = 'left top';
+    if (left + W > vw - fw - 12) { left = sx - rr - 18 - W; origin = 'right top'; }
+    left = cl(left, 12, Math.max(12, vw - W - 12));
+    const top = cl(sy - 70, 64, Math.max(64, vh - 360));
+    const pa = cl((t - this.popAt) / 0.28, 0, 1);
+    return Object.assign(p, { l: left, t: top, maxH: vh - top - 16, op: pa, sc: 0.94 + 0.06 * outBack(pa), ty: (1 - outCubic(pa)) * 8, origin });
+  }
+
+  renderVals() {
+    const m = this.m, t = NOW(), z = this.zoom, P = this.pan, S = m.sups;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1400, vh = typeof window !== 'undefined' ? window.innerHeight : 900;
+    const dr = this.drag, dragA = (dr && dr.kind === 'agent' && dr.moved) ? dr.id : null;
+    const sel = this.sel, always = !!this.props.alwaysShowNames;
+    const dt = cl(t - (this.lastT || t), 0, 0.1); this.lastT = t;
+    const tmode = this.props.thoughts || 'zoomed';
+    const lines = [], rooms = [], ghosts = [], sups = [], pulses = [], furn = [];
+    const line = (a, b, op, bw, ls) => { const dx = b[0] - a[0], dy = b[1] - a[1]; lines.push({ x: a[0], y: a[1] - bw / 2, w: Math.hypot(dx, dy), a: Math.atan2(dy, dx) * 180 / Math.PI, op, bw, ls }); };
+    Object.values(S).forEach(s => { if (s.boss && S[s.boss]) line([S[s.boss].x, S[s.boss].y], [s.x, s.y], .26, 2, 'solid'); });
+    this.apos = {};
+
+    const eqMap = {};
+    m.furn.forEach(F => this.inRange(F).forEach(T => { (eqMap[T.id] = eqMap[T.id] || []).push(F); line([F.x, F.y], [T.x, T.y], .28, 1.5, 'dotted'); }));
+    this.eqMap = eqMap;
+
+    m.furn.forEach(F => {
+      const D = FT[F.type], isSel = !!(sel && sel.kind === 'furn' && sel.id === F.id);
+      const dragging = !!(dr && dr.kind === 'furn' && dr.id === F.id && dr.moved);
+      const born = F.born != null ? cl((t - F.born) / 0.5, 0, 1) : 1;
+      const nOn = F.on.filter(Boolean).length;
+      furn.push({ x: F.x, y: F.y, kind: F.type, t, label: D.name, sub: nOn + ' on \u00b7 ' + (eqMap && this.inRange(F).length) + ' teams', showRange: isSel || dragging, rL: -FR, rD: FR * 2, z: isSel || dragging ? 8 : 0, sc: (born < 1 ? outBack(born) : 1) * (dragging ? 1.1 : 1), down: e => this.nodeDown(e, 'furn', F.id) });
+    });
+
+    m.teams.forEach((T, ti) => {
+      const B = S[T.boss] || S.pip;
+      if (T.state === 'hidden') {
+        line([B.x, B.y], [T.x, T.y], .12, 1.5, 'dashed');
+        ghosts.push({ l: T.x - 65, t: T.y - 48, down: e => this.nodeDown(e, 'ghost', T.id) });
+        return;
+      }
+      const pend = T.state === 'pending';
+      line([B.x, B.y], [T.x, T.y], pend ? .12 : .17, 1.5, pend ? 'dashed' : 'solid');
+      const mem = this.members(T, dragA), n = mem.length, w = roomW(n), h = roomH(n), dk = desks(n, w, h);
+      const born = T.born != null ? cl((t - T.born) / 0.6, 0, 1) : 1;
+      const bsc = T.born != null && born < 1 ? outBack(born) : 1;
+      const fe = t - (T.fireAt != null ? T.fireAt : -99);
+      const emph = fe >= 0 && fe < 0.5 ? 1 + 0.045 * Math.sin(fe / 0.5 * Math.PI) : 1;
+      const isSel = sel && sel.kind === 'team' && sel.id === T.id;
+      const hot = !!dragA && this.hover === T.id;
+      const beingDragged = dr && dr.kind === 'team' && dr.id === T.id && dr.moved;
+      const eq = eqMap[T.id] || [];
+      const agents = mem.map((a, i) => {
+        const ph = i * 0.8 + ti * 1.7;
+        const md = pend ? 'pending' : this.mood(a, t);
+        const desk = dk[i];
+        let tx = desk[0], ty = desk[1], atF = false, trip = false;
+        if ((md === 'working' || md === 'flow') && eq.length) {
+          const F = eq[i % eq.length], per = 26, tt = (((t + ph * 3.1) % per) + per) % per, go = 1.6, stay = 3.4;
+          const fx = F.x - T.x, fy = F.y - T.y + 32;
+          if (tt < go) { const q = inOutSine(tt / go); tx = lerp(desk[0], fx, q); ty = lerp(desk[1], fy, q); trip = true; }
+          else if (tt < go + stay) { tx = fx; ty = fy; atF = true; }
+          else if (tt < go * 2 + stay) { const q = inOutSine((tt - go - stay) / go); tx = lerp(fx, desk[0], q); ty = lerp(fy, desk[1], q); trip = true; }
+        } else if (md === 'bored') { tx = desk[0] + Math.sin(t * 0.35 + ph) * 16; ty = desk[1] + Math.sin(t * 0.23 + ph) * 4; }
+        let d = this.disp[a.id];
+        if (!d) d = this.disp[a.id] = { team: T.id, x: tx, y: ty };
+        if (d.team !== T.id) { d.x = (d.wx != null ? d.wx : T.x) - T.x; d.y = (d.wy != null ? d.wy : T.y) - T.y; d.team = T.id; }
+        const gap = Math.hypot(tx - d.x, ty - d.y), k = 1 - Math.exp(-dt * 7);
+        d.x += (tx - d.x) * k; d.y += (ty - d.y) * k;
+        d.wx = T.x + d.x; d.wy = T.y + d.y;
+        this.apos[a.id] = { x: d.wx, y: d.wy };
+        const walking = trip || (gap > 2 && md !== 'bored');
+        let bob = 0, jx = 0, rot = 0, bsc = 1, eW = 2.4, eH = 3.2, eT = 5.6, e1 = 4.2, e2 = 10.4;
+        if (walking) bob = -Math.abs(Math.sin(t * 12 + ph)) * 1.8;
+        else if (md === 'working') bob = Math.sin(t * 7 + ph) * 1.1;
+        else if (md === 'flow') { bob = -Math.max(0, Math.sin(t * 5 + ph)) * 3.2; eH = 1.3; eT = 6.6; }
+        else if (md === 'overwhelmed') { jx = Math.sin(t * 38 + ph) * 0.7; eW = 3; eH = 4; eT = 4.6; e1 = 3.4; e2 = 10.2; }
+        else if (md === 'bored') { bob = Math.sin(t * 1.1 + ph) * 1.2; rot = Math.sin(t * 0.9 + ph) * 7; eH = 1.1; eT = 8.2; }
+        else if (md === 'frustrated') { const c = (((t + ph) % 2.6) + 2.6) % 2.6; if (c < 0.35) { jx = Math.sin(c * 60) * 1.4; bob = -1.5; } eH = 2; eT = 7; }
+        else if (md === 'stalled') { jx = Math.sin(t * 22 + ph) * 0.35; rot = -5; bsc = 0.93; const look = Math.sin(t * 2.4 + ph) * 1.6; e1 += look; e2 += look; eH = 3; }
+        const blink = ((t * 0.9 + ph * 1.37) % 4.3) < 0.13;
+        if (blink && md !== 'bored' && md !== 'flow') { eT += (eH - 0.8) / 2; eH = 0.8; }
+        const aSel = !!(sel && sel.kind === 'agent' && sel.id === a.id), hov = this.hoverAgent === a.id;
+        const notable = md !== 'working' && md !== 'pending';
+        const th = this.thought(a, md);
+        const hasBubble = tmode !== 'off' && !walking && (aSel || hov || tmode === 'always');
+        const hasIcon = notable && !hasBubble && !walking && tmode !== 'off';
+        const pulse = 1 + 0.08 * Math.sin(t * (md === 'frustrated' ? 9 : md === 'overwhelmed' ? 7 : 3) + ph);
+        const decoT = 9.5 + bob;
+        const cyc = (sp, p) => ((((t * sp + p) % 1) + 1) % 1);
+        return {
+          l: w / 2 + d.x, t: h / 2 + d.y, z: hasBubble || aSel ? 3 : 1,
+          bodyT: decoT, bodyL: 9.5 + jx, rot, bsc, ringT: 4 + bob, dotT: 1 + bob, nameT: 30 + bob,
+          working: (md === 'working' || atF) && !walking && !pend,
+          d1: .4 + .6 * Math.abs(Math.sin(t * 6 + ph)), d2: .4 + .6 * Math.abs(Math.sin(t * 6 + ph + 1)),
+          e1L: e1, e2L: e2, eT, eW, eH, b1L: e1 - 0.8, b2L: e2 - 0.8, browT: eT - 2.2,
+          isFlow: md === 'flow' && !walking, isOver: md === 'overwhelmed', isBored: md === 'bored', isFrus: md === 'frustrated', isStall: md === 'stalled',
+          s1: .2 + .8 * Math.abs(Math.sin(t * 4 + ph)), s2: .2 + .8 * Math.abs(Math.sin(t * 4 + ph + 1.3)), s3: .2 + .8 * Math.abs(Math.sin(t * 4 + ph + 2.6)),
+          sT1: decoT - 4, sT2: decoT - 6, sT3: decoT + 9,
+          stackT: decoT - 11, load: a.backlog.length + (a.doing ? 1 : 0), swT: 1 + cyc(0.6, ph) * 4, swO: 1 - cyc(0.6, ph),
+          z1T: decoT - 3 - cyc(0.5, ph) * 8, z1O: 1 - cyc(0.5, ph), z2T: decoT - 3 - cyc(0.5, ph + 0.5) * 8, z2O: 1 - cyc(0.5, ph + 0.5),
+          angT: decoT - 7, angS: 1 + 0.18 * Math.sin(t * 9 + ph), puffT: decoT - 6 - cyc(0.7, ph) * 7, puffO: 1 - cyc(0.7, ph),
+          qT: decoT - 12 + Math.sin(t * 3 + ph) * 1.2, qR: Math.sin(t * 2.4 + ph) * 12,
+          hasBubble, bubB: 36 - decoT + 12, moodTag: MOOD[md].tag, thought: th.text,
+          hasIcon, icB: 36 - decoT + 3, icSc: pulse, icon: md === 'overwhelmed' ? String(a.backlog.length + (a.doing ? 1 : 0)) : MOOD[md].icon, mc: MOOD[md].c,
+          hasAura: notable, auraOp: .55 + .25 * Math.sin(t * 3 + ph), auraSc: pulse,
+          op: pend ? .4 : 1, sel: aSel, showName: (aSel || always || z >= 1.25) && !hasBubble, name: a.name,
+          down: e => this.nodeDown(e, 'agent', a.id),
+          enter: () => { this.hoverAgent = a.id; }, leave: () => { if (this.hoverAgent === a.id) this.hoverAgent = null; },
+        };
+      });
+      const eqShort = eq.map(F => FT[F.type].short).filter((v, j, arr) => arr.indexOf(v) === j).join(' \u00b7 ');
+      rooms.push({
+        l: T.x - w / 2, t: T.y - h / 2, w, h, sc: bsc * emph * (beingDragged && this.hoverMgr ? 0.9 : 1), op: born * (beingDragged && this.hoverMgr ? 0.65 : 1),
+        z: isSel || hot ? 5 : (beingDragged ? 6 : 1),
+        ripple: fe >= 0 && fe < 0.7, ro: .5 * (1 - cl(fe / 0.7, 0, 1)), rs: 1 + cl(fe / 0.7, 0, 1) * 0.35,
+        bg: pend ? 'rgba(251,250,245,.55)' : hot ? '#ffffff' : '#fbfaf5',
+        border: pend ? '2px dashed rgba(21,20,15,.28)' : hot ? '3px solid #15140f' : '2px solid #15140f',
+        shadow: pend ? 'none' : (isSel || hot) ? '0 4px 0 rgba(21,20,15,.1), 0 0 0 6px rgba(21,20,15,.1)' : '0 4px 0 rgba(21,20,15,.1)',
+        labelColor: pend ? '#6b6a62' : '#15140f', name: T.name, meta: pend ? ' \u00b7 pending' : ' \u00b7 ' + n,
+        hasEq: !!eqShort && !pend, eqTag: eqShort, empty: n === 0 && !pend,
+        moodDots: mem.map(a => { const md = pend ? 'pending' : this.mood(a, t); return { c: md === 'working' ? '#fbfaf5' : MOOD[md].c, w: md === 'working' ? 6 : 12 }; }),
+        desks: dk.map(d => ({ l: w / 2 + d[0] - 10, t: h / 2 + d[1] + 8, c: pend ? 'rgba(21,20,15,.2)' : 'rgba(21,20,15,.5)' })),
+        agents, down: e => this.nodeDown(e, 'team', T.id),
+      });
+    });
+
+    Object.values(S).forEach((s, si) => {
+      const prime = s.id === 'pip', sz = s.size, ph = prime ? 0 : si * 1.3;
+      const bob = Math.sin(t * 2 + ph) * (prime ? 4 : 3);
+      const rv = t - (s.recv || -99), rsc = rv >= 0 && rv < 0.45 ? 1 + 0.12 * Math.sin(rv / 0.45 * Math.PI) : 1;
+      const born = s.born != null ? cl((t - s.born) / 0.6, 0, 1) : 1;
+      const bsc = s.born != null && born < 1 ? outBack(born) : 1;
+      const isSel = !!(sel && sel.kind === 'sup' && sel.id === s.id);
+      const hot = this.hoverMgr === s.id;
+      let lx = 0, ly = 0;
+      if (prime && this.mouse.x > -900) {
+        const sx = P.x + s.x * z, sy = P.y + s.y * z, dx = this.mouse.x - sx, dy = this.mouse.y - sy, d = Math.hypot(dx, dy) || 1, k = Math.min(1, d / 200);
+        lx = dx / d * sz * 0.07 * k; ly = dy / d * sz * 0.06 * k;
+      }
+      const blink = ((t * 0.8 + ph * 2.1) % 5.1) < 0.14;
+      const eW = sz * 0.13, eHf = sz * 0.17, g = sz * 0.16;
+      const dragging = dr && dr.kind === 'sup' && dr.id === s.id && dr.moved;
+      sups.push({
+        x: s.x, y: s.y, z: hot ? 40 : isSel || dragging ? 30 : 20, op: born * (dragging && this.hoverMgr ? .65 : 1), size: sz, bl: -sz / 2, bt: -sz / 2 + bob, sc: bsc * rsc * (dragging ? 1.08 : 1) * (hot ? 1.12 : 1),
+        halo: sz * 1.85, haloL: -sz * 0.925, haloT: -sz * 0.925 + bob, hs: hot ? 1.25 : 1 + Math.sin(t * 1.6 + ph) * 0.06,
+        haloOp: hot ? .7 : isSel ? .45 : (prime ? .18 : .13), haloStyle: hot ? 'solid' : 'dashed', haloBg: hot ? 'rgba(21,20,15,.06)' : 'transparent',
+        rad: sz * 0.22, earW: sz * 0.13, earH: sz * 0.34, earT: -sz * 0.28, ear1L: sz * 0.28 - sz * 0.065, ear2L: sz * 0.72 - sz * 0.065,
+        e1L: sz / 2 - g / 2 - eW + lx, e2L: sz / 2 + g / 2 + lx, eT: sz * 0.36 + ly + (blink ? eHf * 0.4 : 0), eW, eH: blink ? eHf * 0.2 : eHf,
+        labT: sz * 0.62 + bob + 6, name: s.name, role: s.role, nameSize: prime ? 13 : 12,
+        hasBadge: prime && m.needs.length > 0, badge: m.needs.length, badgeSc: 1 + 0.06 * Math.sin(t * 4),
+        down: e => this.nodeDown(e, 'sup', s.id),
+      });
+    });
+
+    this.pulses.forEach(p => {
+      const path = this.pathPts(p.team); const segs = []; let total = 0;
+      for (let i = 0; i < path.length - 1; i++) { const d = Math.hypot(path[i + 1][0] - path[i][0], path[i + 1][1] - path[i][1]); segs.push(d); total += d; }
+      const target = inOutCubic(cl((t - p.at) / p.dur, 0, 1)) * total;
+      let acc = 0, x = path[0][0], y = path[0][1];
+      for (let i = 0; i < segs.length; i++) {
+        if (target <= acc + segs[i]) { const q = segs[i] ? (target - acc) / segs[i] : 0; x = lerp(path[i][0], path[i + 1][0], q); y = lerp(path[i][1], path[i + 1][1], q); break; }
+        acc += segs[i]; x = path[i + 1][0]; y = path[i + 1][1];
+      }
+      pulses.push({ x, y });
+    });
+
+    let dragAg = { x: 0, y: 0, name: '', target: '', rot: 0 };
+    if (dragA && this.dragPos) {
+      const a = this.agent(dragA);
+      dragAg = { x: this.dragPos.x, y: this.dragPos.y, name: a.name, target: this.hover ? '\u2192 ' + this.team(this.hover).name : '\u00b7 drop on a floor', rot: cl((this.dragPos.vx || 0) * 1.5, -14, 14) };
+    }
+    const newF = dr && dr.kind === 'newfurn' && dr.moved;
+    const overWorld = newF && this.mouse.y < vh - 120 && this.mouse.x < vw - this.feedW();
+    const ghost = newF ? { x: this.mouse.x, y: this.mouse.y, kind: dr.type, t, sc: overWorld ? z : 0.9, label: overWorld ? 'place ' + FT[dr.type].name : 'drag onto the floor' } : { x: 0, y: 0, kind: 'mcp', t, sc: 1, label: '' };
+    const reTag = this.hoverMgr && S[this.hoverMgr] ? { x: this.mouse.x + 16, y: this.mouse.y + 18, text: '\u2192 report to ' + S[this.hoverMgr].name } : { x: 0, y: 0, text: '' };
+
+    const nowMs = Date.now();
+    const ago = ms => ms < 10000 ? 'now' : ms < 60000 ? Math.floor(ms / 1000) + 's' : Math.floor(ms / 60000) + 'm';
+    const cards = m.feed.map(c => {
+      const pr = cl((nowMs - c.ts) / 500, 0, 1);
+      const filled = c.kind !== 'DONE' && c.kind !== 'MOVED';
+      const kc = c.kind === 'STUCK' ? '#d63c2f' : c.kind === 'ASKS' ? '#e8b923' : null;
+      return { kind: c.kind, path: c.path || '', who: c.who ? c.who + (c.kind === 'DONE' ? ' \u2713 ' : '') : '', text: c.text, ago: ago(nowMs - c.ts), op: outCubic(pr), tx: (1 - outCubic(pr)) * 40, kbg: kc || (filled ? '#15140f' : 'transparent'), kfg: kc ? '#15140f' : (filled ? '#f4f3ee' : '#15140f') };
+    });
+
+    const pop = sel ? this.buildPop(t, vw, vh) : null;
+    const tgt = S[this.addTargetId()] || S.pip;
+
+    return {
+      vpRef: this.vpRef, bgDown: e => this.bgDown(e),
+      panX: P.x, panY: P.y, zoom: z, gridSize: 30 * z, bgCursor: dr && dr.moved ? 'grabbing' : 'default',
+      lines, rooms, ghosts, sups, pulses, furn, hasDragAg: !!(dragA && this.dragPos), dragAg,
+      hasGhost: !!newF, ghost, hasReTag: !!this.hoverMgr, reTag,
+      dock: FT_KEYS.map(k => ({ kind: k, t, short: FT[k].short, down: e => this.dockDown(e, k) })),
+      dockX: (vw - this.feedW() < 700) ? (vw - this.feedW()) / 2 : Math.max(290 + 200, (vw - this.feedW()) / 2 + 40),
+      ctrlBottom: (vw - this.feedW() < 700) ? 128 : 18,
+      addTarget: tgt.name, addMgr: () => this.addManager(tgt.id), addTeam: () => this.addTeam(tgt.id),
+      agentCount: m.agents.filter(a => { const T = this.team(a.team); return T && T.state === 'active'; }).length,
+      teamCount: m.teams.filter(T => T.state === 'active').length,
+      mgrCount: Object.keys(S).length, furnCount: m.furn.length,
+      zoomPct: Math.round(z * 100),
+      zoomIn: () => { this.zoomAt((vw - this.feedW()) / 2, vh / 2, 1.2); this.forceUpdate(); },
+      zoomOut: () => { this.zoomAt((vw - this.feedW()) / 2, vh / 2, 1 / 1.2); this.forceUpdate(); },
+      fit: () => { this.fitView(); this.forceUpdate(); },
+      reset: () => { try { localStorage.removeItem(KEY); } catch (e) {} this.m = seed(); this.sel = null; this.pulses = []; this.fitView(); this.forceUpdate(); },
+      feedOpen: this.showFeed, feedClosed: !this.showFeed,
+      toggleFeed: () => { this.showFeed = !this.showFeed; this.forceUpdate(); },
+      liveOp: .5 + .5 * Math.abs(Math.sin(t * 2)),
+      cards, hasPop: !!pop, pop: pop || {},
+      closePop: () => { this.sel = null; this.forceUpdate(); },
+    };
+  }
+}
+</script>
+</body>
+</html>

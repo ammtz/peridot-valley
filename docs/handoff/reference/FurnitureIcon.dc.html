@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="position:relative;width:48px;height:48px;pointer-events:none">
+  <sc-if value="{{ isMcp }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:8px;top:1px;width:32px;height:46px;border:2px solid #15140f;border-radius:5px;background:#fbfaf5;box-shadow:0 3px 0 rgba(21,20,15,.12);display:flex;flex-direction:column;gap:3px;padding:4px 3px">
+      <div style="flex:1;border:1.5px solid #15140f;border-radius:2px;display:flex;align-items:center;justify-content:flex-end;padding-right:2px"><span style="width:4px;height:4px;border-radius:50%;background:#15140f;opacity:{{ l1 }}"></span></div>
+      <div style="flex:1;border:1.5px solid #15140f;border-radius:2px;display:flex;align-items:center;justify-content:flex-end;padding-right:2px"><span style="width:4px;height:4px;border-radius:50%;background:#15140f;opacity:{{ l2 }}"></span></div>
+      <div style="flex:1;border:1.5px solid #15140f;border-radius:2px;display:flex;align-items:center;justify-content:flex-end;padding-right:2px"><span style="width:4px;height:4px;border-radius:50%;background:#15140f;opacity:{{ l3 }}"></span></div>
+    </div>
+  </sc-if>
+  <sc-if value="{{ isDb }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:6px;top:9px;width:36px;height:35px;border:2px solid #15140f;border-top:none;border-radius:0 0 18px 18px / 0 0 7px 7px;background:#fbfaf5;box-shadow:0 3px 0 rgba(21,20,15,.12)"></div>
+    <div style="position:absolute;left:6px;top:15px;width:36px;height:14px;border:2px solid transparent;border-bottom-color:#15140f;border-radius:50%"></div>
+    <div style="position:absolute;left:6px;top:24px;width:36px;height:14px;border:2px solid transparent;border-bottom-color:#15140f;border-radius:50%"></div>
+    <div style="position:absolute;left:6px;top:2px;width:36px;height:14px;border:2px solid #15140f;border-radius:50%;background:#fbfaf5"></div>
+    <div style="position:absolute;left:32px;top:31px;width:4px;height:4px;border-radius:50%;background:#15140f;opacity:{{ l1 }}"></div>
+  </sc-if>
+  <sc-if value="{{ isBooks }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:3px;top:4px;width:42px;height:41px;border:2px solid #15140f;border-radius:4px;background:#fbfaf5;box-shadow:0 3px 0 rgba(21,20,15,.12)"></div>
+    <div style="position:absolute;left:3px;top:23px;width:42px;height:2px;background:#15140f"></div>
+    <div style="position:absolute;left:8px;top:8px;width:32px;height:15px;display:flex;align-items:flex-end;gap:2px">
+      <span style="width:4px;height:13px;background:#15140f"></span><span style="width:4px;height:10px;background:#6b6a62"></span><span style="width:5px;height:14px;background:#15140f"></span><span style="width:3px;height:8px;background:#6b6a62"></span><span style="width:4px;height:12px;background:#15140f;transform:rotate(12deg);transform-origin:bottom left"></span>
+    </div>
+    <div style="position:absolute;left:8px;top:27px;width:32px;height:15px;display:flex;align-items:flex-end;gap:2px">
+      <span style="width:5px;height:12px;background:#6b6a62"></span><span style="width:4px;height:14px;background:#15140f"></span><span style="width:4px;height:9px;background:#15140f"></span><span style="width:4px;height:13px;background:#6b6a62"></span><span style="width:4px;height:11px;background:#15140f"></span>
+    </div>
+  </sc-if>
+  <sc-if value="{{ isBoard }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:12px;top:33px;width:2px;height:13px;background:#15140f;transform:rotate(10deg)"></div>
+    <div style="position:absolute;left:34px;top:33px;width:2px;height:13px;background:#15140f;transform:rotate(-10deg)"></div>
+    <div style="position:absolute;left:1px;top:3px;width:46px;height:32px;border:2px solid #15140f;border-radius:4px;background:#fbfaf5;box-shadow:0 3px 0 rgba(21,20,15,.12)"></div>
+    <div style="position:absolute;left:11px;top:23.25px;width:17px;height:1.5px;background:#15140f;transform:rotate(-40deg);transform-origin:0 50%"></div>
+    <div style="position:absolute;left:24px;top:12.25px;width:17.7px;height:1.5px;background:#15140f;transform:rotate(42.7deg);transform-origin:0 50%"></div>
+    <div style="position:absolute;left:7.5px;top:20.5px;width:7px;height:7px;border-radius:50%;background:#15140f"></div>
+    <div style="position:absolute;left:20.5px;top:9.5px;width:7px;height:7px;border-radius:50%;background:#15140f"></div>
+    <div style="position:absolute;left:33.5px;top:21.5px;width:7px;height:7px;border-radius:50%;border:1.5px solid #15140f;background:#fbfaf5;opacity:{{ l1 }}"></div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:48,&quot;height&quot;:48},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;mcp&quot;,&quot;db&quot;,&quot;books&quot;,&quot;board&quot;],&quot;default&quot;:&quot;mcp&quot;,&quot;tsType&quot;:&quot;'mcp'|'db'|'books'|'board'&quot;},&quot;t&quot;:{&quot;editor&quot;:null,&quot;default&quot;:0,&quot;tsType&quot;:&quot;number&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const k = this.props.kind, t = this.props.t || 0;
+    return {
+      isMcp: k === 'mcp', isDb: k === 'db', isBooks: k === 'books', isBoard: k === 'board',
+      l1: .25 + .75 * Math.abs(Math.sin(t * 3.1)), l2: .25 + .75 * Math.abs(Math.sin(t * 2.3 + 1)), l3: .25 + .75 * Math.abs(Math.sin(t * 4.2 + 2)),
+    };
+  }
+}
+</script>
+</body>
+</html>
