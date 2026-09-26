@@ -79,6 +79,9 @@ export class Sim {
   tourToolPlaced = false;
   tourRecPlaced = false;
   resetConfirm = false;
+  // --- phone chrome (U2): the mood legend and the dock collapse into sheets ---
+  phoneMoodOpen = false;
+  phoneAddOpen = false;
   evLog: { t: number; team: string; kind: 'done' | 'stuck' | 'fear'; who?: string; text?: string }[] = [];
   pan = { x: 0, y: 0 };
   zoom = 1;
@@ -830,6 +833,31 @@ export class Sim {
     this.dirty = true;
     if (this.tourOn && this.tourStep === 2) this.tourToolPlaced = true;
     if (this.tourOn && this.tourStep === 3 && type === 'rec') this.tourRecPlaced = true;
+  }
+  /** Phone (U2): the "+" sheet taps a tool tile instead of dragging one off a dock. */
+  placeFurnFromSheet(type: Furniture['type']) {
+    const vw = window.innerWidth,
+      vh = window.innerHeight;
+    const w = this.toWorld(vw / 2 + (Math.random() - 0.5) * 70, vh / 2 + (Math.random() - 0.5) * 60);
+    this.placeFurn(type, w.x, w.y);
+    this.phoneAddOpen = false;
+    this.notify();
+  }
+  openPhoneAdd() {
+    this.phoneAddOpen = true;
+    this.notify();
+  }
+  closePhoneAdd() {
+    this.phoneAddOpen = false;
+    this.notify();
+  }
+  openPhoneMood() {
+    this.phoneMoodOpen = true;
+    this.notify();
+  }
+  closePhoneMood() {
+    this.phoneMoodOpen = false;
+    this.notify();
   }
   reparent(kind: 'team' | 'sup', id: string, bossId: string) {
     const m = this.m,
@@ -1922,6 +1950,13 @@ export class Sim {
         : [],
       dockX: vw - this.feedW() < 700 ? (vw - this.feedW()) / 2 : Math.max(290 + 200, (vw - this.feedW()) / 2 + 40),
       ctrlBottom: vw - this.feedW() < 700 ? 128 : 18,
+      phoneMoodOpen: this.phoneMoodOpen,
+      openPhoneMood: () => this.openPhoneMood(),
+      closePhoneMood: () => this.closePhoneMood(),
+      phoneAddOpen: this.phoneAddOpen,
+      openPhoneAdd: () => this.openPhoneAdd(),
+      closePhoneAdd: () => this.closePhoneAdd(),
+      placeFromSheet: (k: Furniture['type']) => this.placeFurnFromSheet(k),
       addTarget: tgt.name,
       addMgr: () => this.addManager(tgt.id),
       addTeam: () => this.addTeam(tgt.id),

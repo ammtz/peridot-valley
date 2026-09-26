@@ -1,6 +1,16 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function ZoomControls({ rv }: { rv: any }) {
   const btn = { width: 34, height: 34, background: '#fbfaf5', border: '2px solid #15140f', borderRadius: 9, fontWeight: 800, fontSize: 15, color: '#15140f', cursor: 'pointer', boxShadow: '0 3px 0 rgba(21,20,15,.18)' } as const;
+  // Phones: pinch zooms, so −/%/+ go away; RESET moves into the "?" sheet. Keep FIT, at a real hit size.
+  if (window.innerWidth < 560) {
+    return (
+      <div style={{ position: 'fixed', left: 16, bottom: rv.ctrlBottom, zIndex: 500 }}>
+        <button onClick={rv.fit} aria-label="Fit view" style={{ width: 44, height: 44, background: '#fbfaf5', border: '2px solid #15140f', borderRadius: 12, fontWeight: 800, fontSize: 10.5, letterSpacing: '.06em', color: '#15140f', cursor: 'pointer', boxShadow: '0 3px 0 rgba(21,20,15,.18)', fontFamily: "'JetBrains Mono',monospace" }}>
+          FIT
+        </button>
+      </div>
+    );
+  }
   return (
     <div style={{ position: 'fixed', left: 18, bottom: rv.ctrlBottom, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'JetBrains Mono',monospace", zIndex: 500 }}>
       <button onClick={rv.zoomOut} style={btn}>−</button>

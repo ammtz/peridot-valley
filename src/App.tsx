@@ -1,7 +1,7 @@
 import { useSim } from './store';
 import { World } from './world/World';
 import { FurnitureIcon } from './world/FurnitureIcon';
-import { TitleBar } from './ui/TitleBar';
+import { TitleBar, PhoneMoodSheet } from './ui/TitleBar';
 import { ZoomControls } from './ui/ZoomControls';
 import { Dock } from './ui/Dock';
 import { Feed } from './ui/Feed';
@@ -24,7 +24,8 @@ export default function App() {
   return (
     <>
       <World sim={sim} rv={rv} />
-      {showTitle && <TitleBar agentCount={rv.agentCount} mgrCount={rv.mgrCount} />}
+      {showTitle && <TitleBar agentCount={rv.agentCount} mgrCount={rv.mgrCount} rv={rv} />}
+      <PhoneMoodSheet rv={rv} />
       {showZoom && <ZoomControls rv={rv} />}
       {showDock && <Dock rv={rv} />}
       {rv.hasGhost && (

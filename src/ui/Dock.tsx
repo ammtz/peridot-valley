@@ -45,7 +45,60 @@ function DockTile({ dk }: { dk: any }) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+function PhoneAddSheet({ rv }: { rv: any }) {
+  if (!rv.phoneAddOpen) return null;
+  const tileBtn: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 10, width: '100%', minHeight: 44, padding: '10px 14px', borderRadius: 10, border: '2px solid #15140f',
+    background: 'transparent', color: '#15140f', fontWeight: 800, fontSize: 12, letterSpacing: '.06em', cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace",
+  };
+  return (
+    <div
+      data-bottom-sheet="true"
+      data-phone-add-sheet="true"
+      style={{
+        position: 'fixed', left: 0, right: 0, bottom: 0, width: '100%', zIndex: 1000, background: '#fbfaf5', border: '2.5px solid #15140f', borderBottom: 'none',
+        borderRadius: '18px 18px 0 0', boxShadow: '0 -6px 0 rgba(21,20,15,.12)', fontFamily: "'JetBrains Mono',monospace", color: '#15140f',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 12px', borderBottom: '2px solid #15140f' }}>
+        <div style={{ fontWeight: 800, fontSize: 13, letterSpacing: '.1em' }}>ADD · under {rv.addTarget}</div>
+        <button onClick={rv.closePhoneAdd} aria-label="Close" style={{ width: 44, height: 44, border: '2px solid #15140f', borderRadius: 10, background: 'transparent', fontWeight: 800, fontSize: 15, color: '#15140f', cursor: 'pointer' }}>×</button>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 16 }}>
+        <button style={{ ...tileBtn, background: '#15140f', color: '#f4f3ee' }} onClick={() => { rv.addMgr(); rv.closePhoneAdd(); }}>+ MANAGER</button>
+        <button style={tileBtn} onClick={() => { rv.addTeam(); rv.closePhoneAdd(); }}>+ TEAM</button>
+        <div style={{ height: 1.5, background: '#dedcd2', margin: '6px 0' }} />
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+        {rv.dock.map((dk: any) => (
+          <button key={dk.kind} style={tileBtn} onClick={() => rv.placeFromSheet(dk.kind)}>
+            <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.06em' }}>{dk.short}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function Dock({ rv }: { rv: any }) {
+  if (window.innerWidth < 560) {
+    return (
+      <>
+        <button
+          id="phone-add-btn"
+          onClick={rv.openPhoneAdd}
+          aria-label="Add manager, team, or tool"
+          style={{
+            position: 'fixed', right: 16, bottom: rv.ctrlBottom, width: 56, height: 56, borderRadius: 18, background: '#15140f', color: '#f4f3ee',
+            border: '2.5px solid #15140f', fontWeight: 800, fontSize: 26, lineHeight: 1, cursor: 'pointer', boxShadow: '0 6px 0 rgba(21,20,15,.18)', zIndex: 550,
+          }}
+        >
+          +
+        </button>
+        <PhoneAddSheet rv={rv} />
+      </>
+    );
+  }
   return (
     <div
       id="dock-panel"
