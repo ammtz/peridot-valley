@@ -115,7 +115,7 @@ if (MOBILE) {
   await js('window.__sim.openPhoneAdd()'); await sleep(300);
   console.log('U14 tools tip shown on first + sheet open:', (await feedText()).includes('drop it near the team'));
   console.log('U14 recorder tip shown on first + sheet open:', (await feedText()).includes('Watches a team'));
-  await js("window.__sim.placeFromSheet('mcp')"); await sleep(300);
+  await js("window.__sim.placeFurnFromSheet('mcp')"); await sleep(300);
   console.log('tool placed from the + sheet:', await js("window.__sim.m.furn.some(f=>f.type==='mcp')"));
   await js('window.__sim.openPhoneAdd()'); await sleep(300);
   console.log('U14 tips do not repeat on a second + sheet open:', !(await feedText()).includes('drop it near the team'));
