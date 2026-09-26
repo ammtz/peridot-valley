@@ -94,6 +94,7 @@ await js(`(()=>{
 })()`);
 await sleep(300);
 console.log('stop1 cleared after the fix:', !(await js('window.__sim.tourWaiting')));
+console.log('U3 sel cleared after stop1 fix (popup does not cover the tour):', await js('window.__sim.sel === null'));
 
 await js('window.__sim.tourNext()');
 await sleep(3000);

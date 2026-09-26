@@ -837,8 +837,11 @@ export class Sim {
     const F: Furniture = { id: 'fx' + Date.now().toString(36), type, x, y, on: FT[type].opts.map((_, i) => i === 0), born: NOW() };
     this.m.furn.push(F);
     this.announceFurn(F);
-    this.sel = { kind: 'furn', id: F.id };
-    this.popAt = NOW();
+    // U3: don't auto-select (and pop open its sheet) over the tour.
+    if (!this.tourOn) {
+      this.sel = { kind: 'furn', id: F.id };
+      this.popAt = NOW();
+    }
     this.dirty = true;
     if (this.tourOn && this.tourStep === 2) this.tourToolPlaced = true;
     if (this.tourOn && this.tourStep === 3 && type === 'rec') this.tourRecPlaced = true;
@@ -1176,6 +1179,8 @@ export class Sim {
     if (this.tourOn && this.tourStep === 1 && this.tourWaiting) {
       this.tourWaiting = false;
       this.tourAdvanceAfterFix();
+      // U3: the popup this fix was made from must not sit on top of the tour's next line.
+      this.sel = null;
     }
   }
   approve(a: Agent) {
