@@ -172,9 +172,8 @@ export function Intro({ sim }: { sim: Sim }) {
       {phase !== 'sleep' && (
         <div style={{ ...card, marginBottom: 100 }} onClick={tap}>
           <div style={{ whiteSpace: 'pre-line' }}>{shown}</div>
-          {done && phase === 'q1' && <AnswerButtons options={[['me', 'Me'], ['work', 'My work']]} onPick={(v) => sim.answerQ1(v as 'me' | 'work')} />}
-          {done && phase === 'q2' && <AnswerButtons options={[['yes', 'Yes, ask me first'], ['no', 'No, just handle it']]} onPick={(v) => sim.answerQ2(v === 'yes')} />}
-          {done && phase === 'q3' && <AnswerButtons options={sim.q3Options()} onPick={(v) => sim.answerQ3(v)} />}
+          {done && phase === 'q1' && <AnswerButtons options={[['yes', 'Yes, ask me first'], ['no', 'No, just handle it']]} onPick={(v) => sim.answerQ1(v === 'yes')} />}
+          {done && phase === 'q2' && <AnswerButtons options={sim.q2Options()} onPick={(v) => sim.answerQ2(v)} />}
           {phase === 'hiring' && <div style={{ marginTop: 12 }}><HiringCard sim={sim} /></div>}
           {phase === 'addteam' && <div style={{ marginTop: 12 }}><AddTeamCard sim={sim} /></div>}
         </div>

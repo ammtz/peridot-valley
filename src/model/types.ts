@@ -65,7 +65,7 @@ export interface Need {
   kind?: 'blocked' | 'fear';
 }
 
-export type FeedKind = 'DONE' | 'MOVED' | 'ORG' | 'EQUIP' | 'LIVE' | 'YOU' | 'STUCK' | 'ASKS' | 'RECAP';
+export type FeedKind = 'DONE' | 'MOVED' | 'ORG' | 'EQUIP' | 'LIVE' | 'YOU' | 'STUCK' | 'ASKS' | 'RECAP' | 'HANDLED';
 
 export interface FeedCard {
   id: string;
@@ -85,6 +85,7 @@ export interface WorldModel {
   needs: Need[];
   feed: FeedCard[];
   onboarded?: boolean;
+  storyDone?: boolean;
 }
 
 export interface Sel {
