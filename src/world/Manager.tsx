@@ -20,7 +20,9 @@ export function Manager({ s }: { s: any }) {
           </div>
         )}
       </div>
-      <div style={{ position: 'absolute', left: 0, top: s.labT, transform: 'translateX(-50%)', textAlign: 'center', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
+      {/* V3/V6: a background behind the name/role so the reporting line (and anything
+          else) never reads as cutting through the text. */}
+      <div style={{ position: 'absolute', left: 0, top: s.labT, transform: 'translateX(-50%)', textAlign: 'center', whiteSpace: 'nowrap', pointerEvents: 'none', background: '#f4f3ee', padding: '1px 7px', borderRadius: 5 }}>
         <div style={{ fontWeight: 800, fontSize: s.nameSize, letterSpacing: '.14em' }}>{s.name}</div>
         <div style={{ fontWeight: 600, fontSize: 9.5, letterSpacing: '.1em', color: '#6b6a62', marginTop: 2 }}>{s.role}</div>
       </div>
