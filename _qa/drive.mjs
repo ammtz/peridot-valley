@@ -155,6 +155,15 @@ if (!MOBILE) {
   const needsInfo = await js("(()=>{const n=window.__sim.m.needs;const texts=n.map((x)=>x.text);return {count:n.length,unique:new Set(texts).size};})()");
   console.log('at most 3 asks after 60s:', needsInfo.count <= 3 && needsInfo.unique === needsInfo.count, JSON.stringify(needsInfo));
 
+  // U7: an idle valley stays healthy -- most agents are working or in flow, not sitting bored.
+  const moodInfo = await js(`(()=>{
+    const sim = window.__sim, t = performance.now()/1000;
+    const live = sim.m.agents.filter(a => sim.team(a.team) && sim.team(a.team).state==='active');
+    const healthy = live.filter(a => { const md = sim.mood(a, t); return md === 'working' || md === 'flow'; });
+    return { total: live.length, healthy: healthy.length, pct: healthy.length / live.length };
+  })()`);
+  console.log('U7 >=60% working or in flow:', moodInfo.pct >= 0.6, JSON.stringify(moodInfo));
+
   const at = (name, dy = 0) => js(`(()=>{const el=[...document.querySelectorAll('div,span')].filter(e=>e.textContent.trim().startsWith(${JSON.stringify(name)})).sort((x,y)=>x.textContent.length-y.textContent.length)[0];if(!el)return null;const r=el.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2+${dy}]})()`);
   const g = await at('JOB HUNT', 40), a = await at('OTTO', -30);
   await drag(g[0], g[1], a[0], a[1]); await shot('t2-jobhunt-to-otto');

@@ -1017,6 +1017,14 @@ export class Sim {
       });
       live.forEach((a) => {
         if (!a.doing && a.backlog.length) a.doing = a.backlog.shift()!;
+        else if (!a.doing && !a.backlog.length && !a.blocked && !a.fear) {
+          // U7: an idle valley stays healthy -- a bored agent, with nothing
+          // queued at all, has a chance each tick to pull a task off its
+          // team's pool instead of waiting for the random single-agent inflow.
+          const T = this.team(a.team);
+          const state: DecideState = { poolHasWork: !!(T && T.pool.length), agentName: a.name, team: a.team };
+          if (decide('idlePickup', state, ['pickup', 'wait']) === 'pickup') this.inflow(a);
+        }
       });
       const pick = <U,>(arr: U[]) => arr[Math.floor(Math.random() * arr.length)];
       const free = live.filter((a) => a.doing && !a.blocked && !a.fear);
