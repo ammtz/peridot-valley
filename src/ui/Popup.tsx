@@ -101,6 +101,14 @@ export function Popup({ rv }: { rv: any }) {
         </div>
       )}
 
+      {pop.hasRecorder && (
+        <div style={{ padding: '12px 16px 2px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.1em' }}>LAST RECAP</div>
+          <div style={{ fontSize: 11.5, lineHeight: 1.45, color: '#6b6a62' }}>{pop.lastRecap}</div>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.1em', marginTop: 4 }}>NEXT IN {pop.nextIn}</div>
+        </div>
+      )}
+
       {pop.hasRows && (
         <>
           <div style={{ padding: '14px 16px 6px', fontSize: 10, fontWeight: 800, letterSpacing: '.1em' }}>{pop.rowsLabel} · {pop.rowCount}</div>

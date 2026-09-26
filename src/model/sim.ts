@@ -1,6 +1,7 @@
 import type { Agent, FeedCard, Furniture, Manager, Mood, Need, NodeKind, Sel, Settings, Team, WorldModel } from './types';
-import { BLOCKERS, FEARS, FR, FT, KEY, MGR_NAMES, MOOD, NOW, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic } from './constants';
-import { desks, roomH, roomW, seed } from './seed';
+import { BLOCKERS, DOCK_TIP, FEARS, FR, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic } from './constants';
+import { blank, desks, roomH, roomW, seed } from './seed';
+import { genericAgents, genericTeamPool, helperCount, pickPreset, Q3_PERSONAL, Q3_WORK, type PresetManagerSeed } from './presets';
 
 type DragKind = 'pan' | 'team' | 'sup' | 'furn' | 'agent' | 'newfurn' | 'ghost';
 
@@ -44,7 +45,34 @@ export type RenderVals = any;
 export type PopVals = any;
 
 export class Sim {
-  m: WorldModel = this.load() || seed();
+  m: WorldModel = seed();
+  // --- onboarding: opening, three questions, hiring, tour ---
+  freshParam = false;
+  introOn = false;
+  introPhase: 'sleep' | 'greet' | 'q1' | 'q2' | 'q3' | 'hiring' | 'addteam' | null = null;
+  pipAsleep = false;
+  speechText = '';
+  speechAt = 0;
+  who: 'me' | 'work' | null = null;
+  askFirst = false;
+  fearMult = 1;
+  hireQueue: PresetManagerSeed[] = [];
+  hireIndex = 0;
+  anyHired = false;
+  pendingContext = false;
+  renaming = false;
+  renameValue = '';
+  addTeamCount = 0;
+  addTeamValue = '';
+  tourOn = false;
+  tourStep = 0;
+  tourStepStart = 0;
+  tourWaiting = false;
+  tourBlockedAgentId: string | null = null;
+  tourToolPlaced = false;
+  tourRecPlaced = false;
+  resetConfirm = false;
+  evLog: { t: number; team: string; kind: 'done' | 'stuck' | 'fear'; who?: string; text?: string }[] = [];
   pan = { x: 0, y: 0 };
   zoom = 1;
   sel: Sel | null = null;
@@ -71,6 +99,22 @@ export class Sim {
   raf = 0;
 
   constructor() {
+    if (typeof window !== 'undefined') {
+      try {
+        this.freshParam = new URLSearchParams(window.location.search).has('fresh');
+      } catch {
+        /* ignore */
+      }
+    }
+    const loaded = this.freshParam ? null : this.load();
+    if (loaded && loaded.onboarded) {
+      this.m = loaded;
+    } else {
+      this.m = blank();
+      this.introOn = true;
+      this.introPhase = 'sleep';
+      this.pipAsleep = true;
+    }
     this.m.agents.forEach((a) => {
       if (a.flowSeed) {
         a.flowUntil = NOW() + 30;
@@ -78,6 +122,255 @@ export class Sim {
         a.flowSeed = false;
       }
     });
+    // Exposed only so _qa/drive.mjs can drive the opening deterministically without
+    // racing the typewriter or guessing pixel coordinates. Not used by the app itself.
+    if (typeof window !== 'undefined') (window as unknown as { __sim: Sim }).__sim = this;
+  }
+
+  // --- speech card typewriter (shared by the intro and the tour) ---
+  setSpeech(text: string) {
+    this.speechText = text;
+    this.speechAt = NOW();
+  }
+  speechShown(): string {
+    const n = Math.floor((NOW() - this.speechAt) * 40);
+    return this.speechText.slice(0, cl(n, 0, this.speechText.length));
+  }
+  speechDone(): boolean {
+    return this.speechShown().length >= this.speechText.length;
+  }
+  finishSpeech() {
+    this.speechAt = NOW() - this.speechText.length / 40 - 0.05;
+  }
+
+  // --- opening ---
+  wake() {
+    if (this.introPhase !== 'sleep') return;
+    this.pipAsleep = false;
+    this.introPhase = 'greet';
+    this.setSpeech("Hi. I'm PIP. I run a team of helpers so you don't have to watch them. Three questions, and I'll hire your first team.");
+    this.notify();
+  }
+  advanceGreet() {
+    if (this.introPhase !== 'greet') return;
+    this.introPhase = 'q1';
+    this.setSpeech('Who is this for?');
+    this.notify();
+  }
+  skipIntro() {
+    this.m = seed();
+    this.m.onboarded = true;
+    this.introOn = false;
+    this.introPhase = null;
+    this.tourOn = false;
+    this.pipAsleep = false;
+    this.dirty = true;
+    this.save();
+    this.fitView();
+    this.notify();
+  }
+  answerQ1(who: 'me' | 'work') {
+    this.who = who;
+    this.introPhase = 'q2';
+    this.setSpeech('Should they check with you before anything important?');
+    this.notify();
+  }
+  answerQ2(ask: boolean) {
+    this.askFirst = ask;
+    this.pendingContext = ask;
+    this.fearMult = ask ? 2 : 0.5;
+    this.introPhase = 'q3';
+    this.setSpeech(this.who === 'me' ? "What's on your mind most?" : 'What eats your week?');
+    this.notify();
+  }
+  q3Options(): [string, string][] {
+    return this.who === 'work' ? Q3_WORK : Q3_PERSONAL;
+  }
+  answerQ3(focusKey: string) {
+    const preset = pickPreset(this.who || 'me', focusKey);
+    this.hireQueue = preset.managers;
+    this.hireIndex = 0;
+    this.anyHired = false;
+    this.introPhase = 'hiring';
+    this.setSpeech("Here's who I'd hire.");
+    this.notify();
+  }
+  currentHire() {
+    return this.hireQueue[this.hireIndex] || null;
+  }
+  private placeManagerAndTeams(mgr: PresetManagerSeed, name: string) {
+    const m = this.m,
+      pip = m.sups.pip,
+      i = this.hireIndex,
+      n = this.hireQueue.length,
+      t = NOW();
+    const mx = pip.x + (i - (n - 1) / 2) * 260,
+      my = pip.y + 220;
+    m.sups[mgr.id] = { id: mgr.id, name, role: mgr.role, x: mx, y: my, size: 42, boss: 'pip', born: t };
+    const first = !this.anyHired;
+    mgr.teams.forEach((ts, j) => {
+      const tx = mx + (j - (mgr.teams.length - 1) / 2) * 180,
+        ty = my + 230;
+      m.teams.push({ id: ts.id, name: ts.name, boss: mgr.id, x: tx, y: ty, state: 'active', pool: ts.pool.slice(), pi: 0, born: t + j * 0.35 });
+      ts.agents.forEach((a) => {
+        m.agents.push({ id: ts.id + '-' + a.n.toLowerCase(), name: a.n, role: a.role, team: ts.id, doing: a.doing, backlog: a.backlog.slice(), done: a.done.slice(), blocked: null, fear: null, ...(a.extra || {}) });
+      });
+      if (first && j === 0 && this.pendingContext) {
+        m.furn.push({ id: 'ctx' + Date.now().toString(36), type: 'books', x: tx + 90, y: ty + 30, on: [true, false, false, false, false], born: t + 0.4 });
+        this.pendingContext = false;
+      }
+    });
+    this.anyHired = true;
+    this.card('ORG', name, '', name + ' joined as a manager. ' + mgr.teams.map((ts) => ts.name).join(', ') + ' are live.');
+    this.dirty = true;
+  }
+  hireCurrent(customName?: string) {
+    const cur = this.currentHire();
+    if (!cur) return;
+    this.placeManagerAndTeams(cur, (customName || cur.name).toUpperCase().slice(0, 14));
+    this.renaming = false;
+    this.hireIndex++;
+    this.afterHireStep();
+  }
+  skipCurrent() {
+    this.hireIndex++;
+    this.renaming = false;
+    if (this.hireIndex >= this.hireQueue.length && !this.anyHired) {
+      this.setSpeech("Fine, I'll start small.");
+      this.hireIndex = 0;
+      this.placeManagerAndTeams(this.hireQueue[0], this.hireQueue[0].name);
+      this.hireIndex = 1;
+    }
+    this.afterHireStep();
+  }
+  private afterHireStep() {
+    if (this.hireIndex >= this.hireQueue.length) {
+      this.introPhase = 'addteam';
+      this.addTeamCount = 0;
+      this.addTeamValue = '';
+      this.setSpeech('Want to add your own?');
+    } else {
+      const nx = this.currentHire()!;
+      this.setSpeech(nx.name + ' would run ' + nx.runs + ' — ' + nx.teams.length + ' teams, ' + helperCount(nx) + ' helpers');
+    }
+    this.dirty = true;
+    this.notify();
+  }
+  startRename() {
+    const cur = this.currentHire();
+    if (!cur) return;
+    this.renaming = true;
+    this.renameValue = cur.name;
+    this.notify();
+  }
+  cancelRename() {
+    this.renaming = false;
+    this.notify();
+  }
+  addCustomTeam(name: string) {
+    if (!name.trim() || this.addTeamCount >= 3) return;
+    const m = this.m,
+      pip = m.sups.pip,
+      id = 'ct' + Date.now().toString(36),
+      t = NOW();
+    const tx = pip.x + (Math.random() - 0.5) * 300,
+      ty = pip.y + 320 + this.addTeamCount * 10;
+    m.teams.push({ id, name: name.toUpperCase().slice(0, 14), boss: 'pip', x: tx, y: ty, state: 'active', pool: genericTeamPool(), pi: 0, born: t });
+    genericAgents().forEach((a) => {
+      m.agents.push({ id: id + '-' + a.n.toLowerCase(), name: a.n, role: a.role, team: id, doing: a.doing, backlog: a.backlog.slice(), done: a.done.slice(), blocked: null, fear: null });
+    });
+    this.card('ORG', name.toUpperCase(), '', 'New team under PIP. Drag agents in any time.');
+    this.addTeamCount++;
+    this.addTeamValue = '';
+    this.dirty = true;
+    this.notify();
+  }
+  finishHiring() {
+    this.introPhase = null;
+    this.introOn = false;
+    this.tourStart();
+  }
+
+  // --- the four-stop tour ---
+  tourStart() {
+    this.tourOn = true;
+    this.tourStep = 0;
+    this.tourStepStart = NOW();
+    this.tourWaiting = false;
+    this.tourToolPlaced = false;
+    this.tourRecPlaced = false;
+    this.fitView(this.tourBottomInset(0), 1.15);
+    this.setSpeech('Everyone reports up. When someone finishes a job, it travels the lines to me, and I tell you.');
+    this.forceCompletionForTour();
+    this.notify();
+  }
+  forceCompletionForTour() {
+    const withWork = this.m.agents.find((a) => a.doing && this.team(a.team)?.state === 'active');
+    if (withWork) this.complete(withWork, NOW());
+  }
+  forceBlockForTour() {
+    const free = this.m.agents.find((a) => !a.blocked && !a.fear && this.team(a.team)?.state === 'active');
+    if (free) {
+      this.makeBlocked(free);
+      this.tourBlockedAgentId = free.id;
+      this.tourWaiting = true;
+      this.centerOnTeam(free.team, this.tourBottomInset(1), 1.6);
+    } else {
+      this.tourWaiting = false;
+    }
+  }
+  tourCanNext(): boolean {
+    const elapsed = NOW() - this.tourStepStart;
+    if (this.tourStep === 1) return !this.tourWaiting;
+    if (this.tourStep === 2) return this.tourToolPlaced || elapsed >= 12;
+    if (this.tourStep === 3) return this.tourRecPlaced || elapsed >= 12;
+    return true;
+  }
+  tourNext() {
+    if (!this.tourCanNext()) return;
+    if (this.tourStep === 0) {
+      this.tourStep = 1;
+      this.tourStepStart = NOW();
+      this.setSpeech('Colours are moods. Green is flow, orange is swamped, red means stuck. One of them is stuck right now. Tap them.');
+      this.forceBlockForTour();
+    } else if (this.tourStep === 1) {
+      this.tourEnterTools();
+    } else if (this.tourStep === 2) {
+      this.tourStep = 3;
+      this.tourStepStart = NOW();
+      this.tourRecPlaced = false;
+      this.sel = null;
+      this.fitView(this.tourBottomInset(3), 1.15);
+      this.setSpeech('The recorder watches a team for you and sends a recap on a schedule. Drop it near the team you care about.');
+    } else if (this.tourStep === 3) {
+      this.tourEnd();
+      return;
+    }
+    this.notify();
+  }
+  tourAdvanceAfterFix() {
+    this.setSpeech("That's the job. You only step in when it matters.");
+  }
+  tourEnterTools() {
+    this.tourStep = 2;
+    this.tourStepStart = NOW();
+    this.tourToolPlaced = false;
+    this.sel = null;
+    this.fitView(this.tourBottomInset(2), 1.15);
+    this.setSpeech("These are tools. Drag one next to a team and they'll use it. Hover or hold one to see what it does.");
+    this.notify();
+  }
+  tourEnd() {
+    this.tourOn = false;
+    this.tourStep = 0;
+    this.m.onboarded = true;
+    this.setSpeech("It's yours now. Drag anything, rename anything, hire more from the dock. I'll be up here.");
+    this.dirty = true;
+    this.save();
+    this.notify();
+  }
+  tourSkip() {
+    this.tourEnd();
   }
 
   load(): WorldModel | null {
@@ -92,7 +385,11 @@ export class Sim {
         S.born = null;
         S.recv = null;
       });
-      s.furn = s.furn || [];
+      s.furn = (s.furn || []).filter((f: Furniture) => (f.type as string) !== 'board');
+      s.furn.forEach((f: Furniture) => {
+        f.born = null;
+        f.lastRecapT = null;
+      });
       s.agents.forEach((a: Agent) => {
         a.flowUntil = 0;
         a.recent = [];
@@ -176,7 +473,7 @@ export class Sim {
     return 'pip';
   }
 
-  fitView() {
+  fitView(bottomInset = 146, maxZoom = 1.3) {
     const m = this.m;
     let x0 = 1e9,
       y0 = 1e9,
@@ -190,6 +487,7 @@ export class Sim {
     };
     Object.values(m.sups).forEach((s) => add(s.x - 60, s.y - 60, s.x + 60, s.y + 70));
     m.teams.forEach((T) => {
+      if (T.state === 'hidden') return;
       const n = this.members(T).length,
         w = roomW(n),
         h = roomH(n);
@@ -198,13 +496,34 @@ export class Sim {
     m.furn.forEach((F) => add(F.x - 40, F.y - 30, F.x + 40, F.y + 50));
     const vw = window.innerWidth,
       vh = window.innerHeight;
+    const topInset = 74;
     const aw = Math.max(200, vw - this.feedW() - 60),
-      ah = Math.max(200, vh - 220);
+      ah = Math.max(200, vh - topInset - bottomInset);
     const bw = x1 - x0,
       bh = y1 - y0;
-    const z = cl(Math.min(aw / bw, ah / bh), 0.3, 1.3);
+    const z = cl(Math.min(aw / bw, ah / bh), 0.3, maxZoom);
     this.zoom = z;
-    this.pan = { x: 30 + (aw - bw * z) / 2 - x0 * z, y: 74 + (ah - bh * z) / 2 - y0 * z };
+    this.pan = { x: 30 + (aw - bw * z) / 2 - x0 * z, y: topInset + (ah - bh * z) / 2 - y0 * z };
+  }
+  /** Center one team floor in the space above the speech card / dock, used by the tour. */
+  centerOnTeam(teamId: string, bottomInset: number, maxZoom: number) {
+    const T = this.team(teamId);
+    if (!T) return;
+    const n = this.members(T).length,
+      w = roomW(n) + 90,
+      h = roomH(n) + 90;
+    const vw = window.innerWidth,
+      vh = window.innerHeight;
+    const topInset = 74;
+    const aw = Math.max(200, vw - this.feedW() - 60),
+      ah = Math.max(200, vh - topInset - bottomInset);
+    const z = cl(Math.min(aw / w, ah / h), 0.3, maxZoom);
+    this.zoom = z;
+    this.pan = { x: 30 + (aw - w * z) / 2 - (T.x - w / 2) * z, y: topInset + (ah - h * z) / 2 - (T.y - h / 2) * z };
+  }
+  /** Bottom inset (px) to keep the world clear of the speech card, and the dock once it shows. */
+  tourBottomInset(step: number) {
+    return step >= 2 ? 320 : 210;
   }
   zoomAt(sx: number, sy: number, f: number) {
     const z = this.zoom,
@@ -408,6 +727,8 @@ export class Sim {
     this.sel = { kind: 'furn', id: F.id };
     this.popAt = NOW();
     this.dirty = true;
+    if (this.tourOn && this.tourStep === 2) this.tourToolPlaced = true;
+    if (this.tourOn && this.tourStep === 3 && type === 'rec') this.tourRecPlaced = true;
   }
   reparent(kind: 'team' | 'sup', id: string, bossId: string) {
     const m = this.m,
@@ -564,11 +885,16 @@ export class Sim {
       const nBlk = live.filter((a) => a.blocked).length,
         nFear = live.filter((a) => a.fear).length;
       const r = Math.random();
-      if (r < 0.09 && nBlk < 2 && free.length) this.makeBlocked(pick(free));
-      else if (r < 0.16 && nFear < 2 && free.length) this.makeFear(pick(free));
-      else if (r < 0.4 && live.length) this.inflow(pick(live));
+      const blockedP = 0.09,
+        fearP = blockedP + 0.07 * this.fearMult,
+        inflowP = fearP + 0.24;
+      if (r < blockedP && nBlk < 2 && free.length) this.makeBlocked(pick(free));
+      else if (r < fearP && nFear < 2 && free.length) this.makeFear(pick(free));
+      else if (r < inflowP && live.length) this.inflow(pick(live));
       else if (free.length) {
-        const wts = free.map((a) => 1 + (this.eqMap[a.team] || []).length * 0.9 + ((a.flowUntil || 0) > t ? 1.5 : 0));
+        const flowBias = this.askFirst ? 0 : 0.5;
+        const usable = (team: string) => (this.eqMap[team] || []).filter((F) => F.type !== 'rec');
+        const wts = free.map((a) => 1 + usable(a.team).length * 0.9 + ((a.flowUntil || 0) > t ? 1.5 + flowBias : 0));
         let q = Math.random() * wts.reduce((x, y) => x + y, 0),
           i = 0;
         while (q > wts[i] && i < free.length - 1) {
@@ -585,7 +911,42 @@ export class Sim {
       this.card(k, path, who, text);
       return false;
     });
+    this.tickRecorders(t);
+    if (this.evLog.length > 400) this.evLog = this.evLog.slice(-300);
     if (this.dirty && t - this.lastSave > 1.5 && !this.drag) this.save();
+  }
+  tickRecorders(t: number) {
+    this.m.furn.forEach((F) => {
+      if (F.type !== 'rec') return;
+      const teams = this.inRange(F);
+      if (!teams.length) return;
+      const optIdx = F.on.findIndex(Boolean);
+      const since = F.lastRecapT != null ? F.lastRecapT : F.born != null ? F.born : t;
+      if (optIdx === 3) {
+        const teamIds = new Set(teams.map((T) => T.id));
+        const stuck = this.evLog.filter((e) => e.kind === 'stuck' && teamIds.has(e.team) && e.t > since);
+        if (stuck.length) this.postRecap(F, since, t, teams, optIdx);
+      } else {
+        const period = REC_DEMO_SECS[optIdx] ?? 45;
+        if (t - since >= period) this.postRecap(F, since, t, teams, optIdx);
+      }
+    });
+  }
+  postRecap(F: Furniture, since: number, now: number, teams: Team[], optIdx: number) {
+    const teamIds = new Set(teams.map((T) => T.id));
+    const inWindow = this.evLog.filter((e) => teamIds.has(e.team) && e.t > since && e.t <= now);
+    const done = inWindow.filter((e) => e.kind === 'done').length;
+    const stuck = inWindow.filter((e) => e.kind === 'stuck');
+    const waiting = inWindow.filter((e) => e.kind === 'fear').length;
+    const names = teams.map((T) => T.name).join(', ');
+    let text = ' — ' + REC_LABELS[optIdx] + ': ' + done + ' done';
+    if (stuck.length) text += ', ' + stuck.length + ' stuck (' + stuck[0].who + ': ' + stuck[0].text + ')';
+    if (waiting) text += ', ' + waiting + ' waiting on you';
+    text += '.';
+    this.card('RECAP', names, '', text);
+    F.lastRecapT = now;
+    F.lastRecapText = text;
+    this.dirty = true;
   }
 
   complete(a: Agent, t: number) {
@@ -598,12 +959,13 @@ export class Sim {
     a.recent = (a.recent || []).filter((x) => t - x < 35).concat([t]);
     if (a.recent.length >= 2) a.flowUntil = t + 16;
     T.fireAt = t;
-    const eq = this.eqMap[T.id] || [];
+    const eq = (this.eqMap[T.id] || []).filter((F) => F.type !== 'rec');
     const via = eq.length ? ' (via ' + eq.map((F) => FT[F.type].name).filter((v, j, arr) => arr.indexOf(v) === j).join(', ') + ')' : '';
     const P = this.pathPts(T.id);
     let len = 0;
     for (let j = 0; j < P.length - 1; j++) len += Math.hypot(P[j + 1][0] - P[j][0], P[j + 1][1] - P[j][1]);
     this.pulses.push({ team: T.id, at: t, dur: cl(len / 420, 0.9, 2.4), card: ['DONE', this.pathName(T.id), a.name, doneText + via] });
+    this.evLog.push({ t, team: T.id, kind: 'done', who: a.name, text: doneText });
     this.dirty = true;
   }
   inflow(a: Agent) {
@@ -624,6 +986,7 @@ export class Sim {
     this.removeNeeds(a.id, 'blocked');
     this.m.needs.unshift({ id: 'nb' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'blocked', text: a.name + ' is stuck: ' + text + '.', acts: [[fix, 'unblock'], ['LATER', 'skip']] });
     this.card('STUCK', this.pathName(a.team), a.name, ' is stuck: ' + text + '.');
+    this.evLog.push({ t: NOW(), team: a.team, kind: 'stuck', who: a.name, text });
   }
   makeFear(a: Agent) {
     const f = FEARS[a.team] || FEARS._;
@@ -631,11 +994,16 @@ export class Sim {
     this.removeNeeds(a.id, 'fear');
     this.m.needs.unshift({ id: 'nf' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'fear', text: a.name + ' wants your OK before ' + f + '.', acts: [['GO AHEAD', 'approve'], ['HOLD OFF', 'hold']] });
     this.card('ASKS', this.pathName(a.team), a.name, ' wants your OK before ' + f + '.');
+    this.evLog.push({ t: NOW(), team: a.team, kind: 'fear', who: a.name, text: f });
   }
   unblock(a: Agent) {
     a.blocked = null;
     this.removeNeeds(a.id, 'blocked');
     this.card('YOU', this.pathName(a.team), a.name, ' is unblocked and back at it.');
+    if (this.tourOn && this.tourStep === 1 && this.tourWaiting && a.id === this.tourBlockedAgentId) {
+      this.tourWaiting = false;
+      this.tourAdvanceAfterFix();
+    }
   }
   approve(a: Agent) {
     a.fear = null;
@@ -868,17 +1236,35 @@ export class Sim {
       p.desc = D.desc;
       p.hasOpts = true;
       p.optsLabel = D.optsLabel;
+      const radio = F.type === 'rec';
       p.opts = D.opts.map((o, i) => ({
         label: (F.on[i] ? '✓ ' : '+ ') + o,
         bg: F.on[i] ? '#15140f' : 'transparent',
         fg: F.on[i] ? '#f4f3ee' : '#15140f',
         border: F.on[i] ? '2px solid #15140f' : '2px dashed rgba(21,20,15,.4)',
         go: () => {
-          F.on[i] = !F.on[i];
+          if (radio) F.on = D.opts.map((_, k) => k === i);
+          else F.on[i] = !F.on[i];
           this.dirty = true;
           this.notify();
         },
       }));
+      if (F.type === 'rec') {
+        p.desc = D.desc + ' Demo clock — 10 min passes in 45 s.';
+        p.hasRecorder = true;
+        p.lastRecap = F.lastRecapText || 'Nothing yet.';
+        const optIdx = F.on.findIndex(Boolean);
+        const period = REC_DEMO_SECS[optIdx];
+        if (period != null) {
+          const since = F.lastRecapT != null ? F.lastRecapT : F.born != null ? F.born : t;
+          const left = Math.max(0, since + period - t);
+          const mm = Math.floor(left / 60),
+            ss = Math.floor(left % 60);
+          p.nextIn = mm + ':' + String(ss).padStart(2, '0');
+        } else {
+          p.nextIn = 'watching for a stuck agent';
+        }
+      }
       p.hasRows = true;
       p.rowsLabel = 'IN RANGE';
       p.rowCount = ts.length;
@@ -886,7 +1272,7 @@ export class Sim {
       p.noRowsText = 'Drag it close to a team floor.';
       p.rows = ts.map((T) => ({ name: T.name, stat: teamStat(T), dotR: '3px', dotBg: '#fbfaf5', go: () => this.select({ kind: 'team', id: T.id }) }));
       p.acts = [btn('REMOVE', () => this.deleteFurn(F.id), 'danger')];
-      p.hint = 'Agents on floors inside the dashed ring walk over to use it and finish work faster.';
+      p.hint = F.type === 'rec' ? 'It watches; agents don’t walk to it.' : 'Agents on floors inside the dashed ring walk over to use it and finish work faster.';
     } else {
       const s = m.sups[sel.id];
       if (!s) return null;
@@ -1045,6 +1431,7 @@ export class Sim {
       const hot = !!dragA && this.hover === T.id;
       const beingDragged = !!(dr && dr.kind === 'team' && dr.id === T.id && dr.moved);
       const eq = eqMap[T.id] || [];
+      const eqWalk = eq.filter((F) => F.type !== 'rec');
       const agents = mem.map((a, i) => {
         const ph = i * 0.8 + ti * 1.7;
         const md = pend ? 'pending' : this.mood(a, t);
@@ -1053,8 +1440,8 @@ export class Sim {
           ty = desk[1],
           atF = false,
           trip = false;
-        if ((md === 'working' || md === 'flow') && eq.length) {
-          const F = eq[i % eq.length],
+        if ((md === 'working' || md === 'flow') && eqWalk.length) {
+          const F = eqWalk[i % eqWalk.length],
             per = 26,
             tt = (((t + ph * 3.1) % per) + per) % per,
             go = 1.6,
@@ -1304,9 +1691,9 @@ export class Sim {
         ear2L: sz * 0.72 - sz * 0.065,
         e1L: sz / 2 - g / 2 - eW + lx,
         e2L: sz / 2 + g / 2 + lx,
-        eT: sz * 0.36 + ly + (blink ? eHf * 0.4 : 0),
+        eT: prime && this.pipAsleep ? sz * 0.36 + eHf * 0.4 : sz * 0.36 + ly + (blink ? eHf * 0.4 : 0),
         eW,
-        eH: blink ? eHf * 0.2 : eHf,
+        eH: prime && this.pipAsleep ? eHf * 0.2 : blink ? eHf * 0.2 : eHf,
         labT: sz * 0.62 + bob + 6,
         name: s.name,
         role: s.role,
@@ -1397,7 +1784,7 @@ export class Sim {
       hasReTag: !!this.hoverMgr,
       reTag,
       dock: FT.mcp
-        ? (['mcp', 'db', 'books', 'board'] as const).map((k) => ({ kind: k, t, short: FT[k].short, down: (e: React.PointerEvent) => this.dockDown(e, k) }))
+        ? (['mcp', 'db', 'books', 'rec'] as const).map((k) => ({ kind: k, t, short: FT[k].short, tip: DOCK_TIP[k], down: (e: React.PointerEvent) => this.dockDown(e, k) }))
         : [],
       dockX: vw - this.feedW() < 700 ? (vw - this.feedW()) / 2 : Math.max(290 + 200, (vw - this.feedW()) / 2 + 40),
       ctrlBottom: vw - this.feedW() < 700 ? 128 : 18,
@@ -1424,16 +1811,31 @@ export class Sim {
         this.fitView();
         this.notify();
       },
-      reset: () => {
+      resetConfirmOpen: this.resetConfirm,
+      resetAsk: () => {
+        this.resetConfirm = true;
+        this.notify();
+      },
+      resetNo: () => {
+        this.resetConfirm = false;
+        this.notify();
+      },
+      resetYes: () => {
         try {
           localStorage.removeItem(KEY);
         } catch {
           /* ignore */
         }
-        this.m = seed();
+        this.m = blank();
         this.sel = null;
         this.pulses = [];
         this.disp = {};
+        this.evLog = [];
+        this.resetConfirm = false;
+        this.introOn = true;
+        this.introPhase = 'sleep';
+        this.pipAsleep = true;
+        this.tourOn = false;
         this.fitView();
         this.notify();
       },

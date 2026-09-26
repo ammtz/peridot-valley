@@ -47,14 +47,26 @@ npm run dev
 
 Then open the link it prints. Works with a mouse or a phone.
 
-**Things to try**
+**What happens when you open it**
 
-- Tap **PIP**, the big one at the top. That's your supervisor, and it has
-  things waiting on you.
-- Find the creature with the red **!**. It's stuck. Tap it and fix it.
-- Drag a team floor onto a different manager to re-organise.
-- Drag a **DB** or **MCP** rack out of the bottom dock and drop it near a team.
+PIP, the supervisor, wakes up and asks you three questions: who it's for,
+whether your helpers should check with you first, and what's taking up your
+week. Your answers pick a starting team. PIP suggests who to hire; you hire,
+rename or skip each one, and add your own. A one-minute tour covers the rest.
+Want the full valley without the questions? There's a skip link.
+
+**Then try this**
+
+- Tap anyone to see what they're working on. Red **!** means stuck: fix it.
+- Drag a team onto a different manager to re-organise.
+- Hold a tool in the bottom dock to see what it does, then drag it next to a
+  team.
+- Drop a **RECORDER** near a team. Every "10 minutes" (45 seconds, demo time)
+  it posts a recap of what they did, what got stuck and what's waiting on you.
 - Pinch or Ctrl+scroll to zoom. Press **F** to fit everything on screen.
+
+Sending this to someone? Add `?fresh` to the link and they'll get the opening
+even if they've been here before.
 
 ## The moods
 

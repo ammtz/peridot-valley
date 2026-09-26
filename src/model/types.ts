@@ -1,4 +1,4 @@
-export type FurnKind = 'mcp' | 'db' | 'books' | 'board';
+export type FurnKind = 'mcp' | 'db' | 'books' | 'rec';
 export type TeamState = 'active' | 'pending' | 'hidden';
 export type Mood = 'working' | 'flow' | 'overwhelmed' | 'bored' | 'frustrated' | 'stalled' | 'pending';
 export type NodeKind = 'agent' | 'team' | 'sup' | 'furn';
@@ -51,6 +51,8 @@ export interface Furniture {
   on: boolean[];
   born?: number | null;
   lastAnn?: string;
+  lastRecapT?: number | null;
+  lastRecapText?: string;
 }
 
 export interface Need {
@@ -63,7 +65,7 @@ export interface Need {
   kind?: 'blocked' | 'fear';
 }
 
-export type FeedKind = 'DONE' | 'MOVED' | 'ORG' | 'EQUIP' | 'LIVE' | 'YOU' | 'STUCK' | 'ASKS';
+export type FeedKind = 'DONE' | 'MOVED' | 'ORG' | 'EQUIP' | 'LIVE' | 'YOU' | 'STUCK' | 'ASKS' | 'RECAP';
 
 export interface FeedCard {
   id: string;
@@ -82,6 +84,7 @@ export interface WorldModel {
   furn: Furniture[];
   needs: Need[];
   feed: FeedCard[];
+  onboarded?: boolean;
 }
 
 export interface Sel {

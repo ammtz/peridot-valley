@@ -51,16 +51,17 @@ export function FurnitureIcon({ kind, t }: { kind: FurnKind; t: number }) {
           </div>
         </>
       )}
-      {kind === 'board' && (
+      {kind === 'rec' && (
         <>
-          <div style={{ position: 'absolute', left: 12, top: 33, width: 2, height: 13, background: '#15140f', transform: 'rotate(10deg)' }} />
-          <div style={{ position: 'absolute', left: 34, top: 33, width: 2, height: 13, background: '#15140f', transform: 'rotate(-10deg)' }} />
-          <div style={{ position: 'absolute', left: 1, top: 3, width: 46, height: 32, border: '2px solid #15140f', borderRadius: 4, background: '#fbfaf5', boxShadow: '0 3px 0 rgba(21,20,15,.12)' }} />
-          <div style={{ position: 'absolute', left: 11, top: 23.25, width: 17, height: 1.5, background: '#15140f', transform: 'rotate(-40deg)', transformOrigin: '0 50%' }} />
-          <div style={{ position: 'absolute', left: 24, top: 12.25, width: 17.7, height: 1.5, background: '#15140f', transform: 'rotate(42.7deg)', transformOrigin: '0 50%' }} />
-          <div style={{ position: 'absolute', left: 7.5, top: 20.5, width: 7, height: 7, borderRadius: '50%', background: '#15140f' }} />
-          <div style={{ position: 'absolute', left: 20.5, top: 9.5, width: 7, height: 7, borderRadius: '50%', background: '#15140f' }} />
-          <div style={{ position: 'absolute', left: 33.5, top: 21.5, width: 7, height: 7, borderRadius: '50%', border: '1.5px solid #15140f', background: '#fbfaf5', opacity: l1 }} />
+          {/* body */}
+          <div style={{ position: 'absolute', left: 5, top: 15, width: 27, height: 20, border: '2px solid #15140f', borderRadius: 5, background: '#fbfaf5', boxShadow: '0 3px 0 rgba(21,20,15,.12)' }} />
+          {/* viewfinder */}
+          <div style={{ position: 'absolute', left: 12, top: 6, width: 11, height: 10, border: '2px solid #15140f', borderRadius: 3, background: '#fbfaf5' }} />
+          {/* lens */}
+          <div style={{ position: 'absolute', left: 27, top: 17, width: 17, height: 17, borderRadius: '50%', border: '2px solid #15140f', background: '#fbfaf5' }} />
+          <div style={{ position: 'absolute', left: 31, top: 21, width: 9, height: 9, borderRadius: '50%', background: '#15140f' }} />
+          {/* blinking record dot */}
+          <div style={{ position: 'absolute', left: 8, top: 19, width: 6, height: 6, borderRadius: '50%', background: '#d63c2f', opacity: 0.4 + 0.6 * Math.abs(Math.sin(t * 5)) }} />
         </>
       )}
     </div>

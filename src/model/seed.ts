@@ -130,6 +130,20 @@ export function seed(): WorldModel {
   return { v: 3, sups, teams, agents, furn, needs: NEEDS.map((n) => ({ ...n })), feed };
 }
 
+/** The opening screen: PIP alone, nothing hired yet. */
+export function blank(): WorldModel {
+  return {
+    v: 3,
+    sups: { pip: { id: 'pip', name: 'PIP', role: 'PRIME SUPERVISOR', x: 540, y: 200, size: 58, boss: null } },
+    teams: [],
+    agents: [],
+    furn: [],
+    needs: [],
+    feed: [],
+    onboarded: false,
+  };
+}
+
 export const roomW = (n: number) => Math.max(124, 100 + n * 20);
 export const roomH = (n: number) => 84 + Math.min(Math.max(n, 1), 4) * 9;
 

@@ -13,6 +13,13 @@ export const BLOCKERS: Record<string, [string, string]> = {
   ins: ['the insurer wants a policy number', 'SEND IT'],
   tax: ["last year’s W-2 is missing", 'UPLOAD W-2'],
   groc: ['your usual store is out of oat milk', 'PICK SUBSTITUTE'],
+  leads: ['the CRM sync failed again', 'RETRY SYNC'],
+  support: ["a ticket needs account access we don’t have", 'REQUEST ACCESS'],
+  build: ['the staging deploy is failing', 'RETRY DEPLOY'],
+  qa: ['the test environment is down', 'RESTART ENV'],
+  inbox: ['the shared inbox lost its login', 'RE-AUTH INBOX'],
+  books: ["last month’s invoice totals don’t match", 'RECONCILE'],
+  hiring: ["a candidate’s references bounced", 'RE-SEND REQUEST'],
   _: ['a login expired', 'RE-AUTH'],
 };
 
@@ -25,6 +32,13 @@ export const FEARS: Record<string, string> = {
   ins: 'sending your details to 3 insurers',
   tax: 'claiming the home office',
   groc: 'going $40 over budget',
+  leads: 'sending a discount without asking',
+  support: 'issuing a refund over $200',
+  build: 'shipping straight to production',
+  qa: 'signing off without a human pass',
+  inbox: 'replying to an angry customer',
+  books: 'paying an invoice that looks off',
+  hiring: 'making an offer before you see it',
   _: 'doing this without asking',
 };
 
@@ -72,14 +86,24 @@ export const FT: Record<FurnKind, { name: string; short: string; desc: string; o
     short: 'CONTEXT',
     desc: 'Context about how you like things done. Nearby agents read it first.',
     optsLabel: 'SHELVES',
-    opts: ['House rules', 'Preferences', 'Past decisions', 'Family info'],
+    opts: ['Ask before acting', 'House rules', 'Preferences', 'Past decisions', 'Family info'],
   },
-  board: {
-    name: 'STRATEGY BOARD',
-    short: 'GRAPH',
-    desc: 'How the team reasons through work. Changes how tasks get broken down.',
-    optsLabel: 'STRATEGIES',
-    opts: ['Plan → act → check', 'Graph of subtasks', 'Debate, then decide', 'Ask before acting'],
+  rec: {
+    name: 'RECORDER',
+    short: 'REC',
+    desc: 'Watches a team and sends you a recap on a schedule.',
+    optsLabel: 'RECAP EVERY',
+    opts: ['Every 10 min', 'Every hour', 'Daily digest', 'Only when someone’s stuck'],
   },
 };
-export const FT_KEYS: FurnKind[] = ['mcp', 'db', 'books', 'board'];
+export const FT_KEYS: FurnKind[] = ['mcp', 'db', 'books', 'rec'];
+/** Dock hover/hold tip copy — separate from the popup description, per the spec's exact wording. */
+export const DOCK_TIP: Record<FurnKind, string> = {
+  mcp: 'Plugs the team into your apps: Gmail, Calendar, Drive, your bank.',
+  db: 'Something to look things up in: receipts, contacts, records.',
+  books: 'Your rules and preferences, so they act the way you would.',
+  rec: 'Watches a team and sends you a recap on a schedule.',
+};
+/** Demo time compression for the recorder: index-matched to FT.rec.opts. `null` = event-triggered, not periodic. */
+export const REC_DEMO_SECS: (number | null)[] = [45, 90, 180, null];
+export const REC_LABELS = ['last 10 min', 'last hour', 'today', 'since last check'];

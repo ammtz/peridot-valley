@@ -13,7 +13,7 @@ export function TitleBar({ agentCount, mgrCount }: { agentCount: number; mgrCoun
     <div style={{ position: 'fixed', left: 22, top: 20, display: 'flex', flexDirection: 'column', gap: 6, fontFamily: "'JetBrains Mono',monospace", pointerEvents: 'none', zIndex: 500 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', maxWidth: narrow ? 'calc(100vw - 100px)' : undefined }}>
         <span style={{ width: 11, height: 11, background: '#15140f', borderRadius: 3 }} />
-        <span style={{ fontWeight: 800, fontSize: 13, letterSpacing: '.16em', color: '#15140f' }}>THE SYSTEM</span>
+        <span style={{ fontWeight: 800, fontSize: 13, letterSpacing: '.16em', color: '#15140f' }}>PERIDOT VALLEY</span>
         <span style={{ fontWeight: 500, fontSize: 11, letterSpacing: '.04em', color: '#6b6a62', borderLeft: '1px solid #dedcd2', paddingLeft: 9 }}>
           live · {agentCount} agents · {mgrCount} managers
         </span>
