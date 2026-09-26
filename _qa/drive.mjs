@@ -1,6 +1,7 @@
-// Drive the built app through Edge's DevTools protocol: the opening (wake, three
+// Drive the built app through Edge's DevTools protocol: the opening (wake, two
 // questions, hire everyone, tour with the fix, end), then the pre-existing
-// re-org/persistence regression checks via the "skip" path. Desktop + phone.
+// re-org/persistence regression checks, the scripted first-minute story and the
+// "PIP asks less" cap, via the "skip" path. Desktop + phone.
 import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 
@@ -49,20 +50,19 @@ await shot('o1-wake');
 await js('window.__sim.wake()');
 await sleep(3000); // let the greeting type out
 await js('window.__sim.advanceGreet()');
-await sleep(3000); // let "Who is this for?" type out
+await sleep(3000); // let "Should they check with you..." type out
 await shot('o2-q1');
-console.log('q1 asked:', (await js('window.__sim.speechText')) === 'Who is this for?');
+console.log('q1 asked:', (await js('window.__sim.speechText')) === 'Should they check with you before anything important?');
 // Real tap on the Q1 answer button, to prove it is actually hittable.
-const meRect = await rectOfButton('My work');
-console.log('found "My work" button:', !!meRect);
-if (meRect) await tap(meRect[0], meRect[1]);
-else await js("window.__sim.answerQ1('work')");
+const askRect = await rectOfButton('No, just handle it');
+console.log('found "No, just handle it" button:', !!askRect);
+if (askRect) await tap(askRect[0], askRect[1]);
+else await js('window.__sim.answerQ1(false)');
 await sleep(300);
 
 await js('window.__sim.finishSpeech()');
-await js('window.__sim.answerQ2(true)'); await sleep(200);
-await js('window.__sim.finishSpeech()');
-await js("window.__sim.answerQ3('everything')");
+console.log('q2 asked:', (await js('window.__sim.speechText')) === 'What should your helpers take off your plate first?');
+await js("window.__sim.answerQ2('job')");
 await sleep(3000); // let the first hire card's line type out
 await shot('o3-hire-card');
 console.log('hire queue length:', await js('window.__sim.hireQueue.length'));
@@ -93,7 +93,7 @@ console.log('stop1 cleared after the fix:', !(await js('window.__sim.tourWaiting
 
 await js('window.__sim.tourNext()');
 await sleep(3000);
-console.log('dock visible at stop2:', (await feedText()).includes('MCP'));
+console.log('dock visible at stop2:', (await feedText()).includes('TOOLS'));
 await shot('o6-tour-stop2');
 await js("window.__sim.placeFurn('mcp', 400, 500)");
 console.log('tool-placed flag set:', await js('window.__sim.tourToolPlaced'));
@@ -108,7 +108,7 @@ await js('window.__sim.tourNext()');
 await sleep(1000);
 console.log('onboarded after tour end:', await js('window.__sim.m.onboarded'));
 console.log('tourOn after end:', await js('window.__sim.tourOn'));
-console.log('dock + feed present at end:', (await feedText()).includes('MCP') && (await feedText()).includes('PIP'));
+console.log('dock + feed present at end:', (await feedText()).includes('TOOLS') && (await feedText()).includes('PIP'));
 await shot('o8-end');
 const savedOnboarded = await js("JSON.parse(localStorage.getItem('the-system-live-v4')||'null')?.onboarded");
 console.log('onboarded persisted to storage:', savedOnboarded);
@@ -119,17 +119,32 @@ if (!MOBILE) {
   const fps = await js('new Promise(r=>{let n=0;const t0=performance.now();(function f(){n++;performance.now()-t0<2000?requestAnimationFrame(f):r(Math.round(n/2))})()})');
   console.log('fps', fps);
 
-  // --- Regression: "skip" still loads the untouched seed world. ---
+  // --- Regression: "skip" still loads the full valley, and runs the scripted story. ---
   await js("localStorage.removeItem('the-system-live-v4'); location.reload()"); await sleep(2500);
   await js('window.__sim.skipIntro()'); await sleep(500);
-  console.log('skip loads the original seed agent count:', await js('window.__sim.m.agents.length'));
-  await tap(574, 120); await shot('t1-pip-popup');
+  console.log('skip loads the full valley agent count (12):', await js('window.__sim.m.agents.length'));
+  await js("window.__sim.select({kind:'sup', id:'pip'})"); await sleep(400); await shot('t1-pip-popup');
   console.log('PIP popup shows NEEDS YOU:', (await feedText()).includes('NEEDS YOU'));
   await js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))"); await sleep(300);
+
+  // The scripted first minute: wait for BILLS to get stuck, fix it, check the recap.
+  await sleep(16000);
+  console.log('story flagged BILLS stuck:', await js("!!(window.__sim.agent('money-bills') && window.__sim.agent('money-bills').blocked)"));
+  await shot('o9-story-stuck');
+  await js("(()=>{const sim=window.__sim,a=sim.agent('money-bills'); if(a) sim.unblock(a);})()");
+  await sleep(500);
+  console.log('story recap posted after the fix:', (await feedText()).includes('Morning recap'));
+  await shot('o10-story-recap');
+
+  // PIP asks less: after 60s of running, at most 3 asks, never two with the same text.
+  await sleep(60000);
+  const needsInfo = await js("(()=>{const n=window.__sim.m.needs;const texts=n.map((x)=>x.text);return {count:n.length,unique:new Set(texts).size};})()");
+  console.log('at most 3 asks after 60s:', needsInfo.count <= 3 && needsInfo.unique === needsInfo.count, JSON.stringify(needsInfo));
+
   const at = (name, dy = 0) => js(`(()=>{const el=[...document.querySelectorAll('div,span')].filter(e=>e.textContent.trim().startsWith(${JSON.stringify(name)})).sort((x,y)=>x.textContent.length-y.textContent.length)[0];if(!el)return null;const r=el.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2+${dy}]})()`);
-  const g = await at('GROCERY', 40), a = await at('ADA', -30);
-  await drag(g[0], g[1], a[0], a[1]); await shot('t2-grocery-to-ada');
-  console.log('ORG card after dropping GROCERY on ADA:', /ORG/.test(await feedText()));
+  const g = await at('JOB HUNT', 40), a = await at('OTTO', -30);
+  await drag(g[0], g[1], a[0], a[1]); await shot('t2-jobhunt-to-otto');
+  console.log('ORG card after dropping JOB HUNT on OTTO:', /ORG/.test(await feedText()));
   await sleep(1200);
   await js('location.reload()'); await sleep(2500);
   await clickByText('RESET'); await sleep(400);
@@ -144,6 +159,12 @@ if (!MOBILE) {
   for (let i = 1; i <= 8; i++) { await t('touchMove', [{ x: 150 - i * 12, y: 400, id: 1 }, { x: 240 + i * 12, y: 400, id: 2 }]); await sleep(30); }
   await t('touchEnd', []); await sleep(400);
   console.log('zoom label after pinch:', (await feedText()).match(/\d+%/)?.[0]);
+
+  // Phone: popups/feed open as a bottom sheet, no taller than ~55% of the viewport, town visible above.
+  await js("window.__sim.select({kind:'sup', id:'pip'})"); await sleep(500);
+  const sheetRatio = await js("(()=>{const el=document.querySelector('[data-bottom-sheet]');if(!el)return null;const r=el.getBoundingClientRect();return r.height/window.innerHeight;})()");
+  console.log('phone bottom sheet height <= 60% of viewport:', sheetRatio != null && sheetRatio <= 0.6, sheetRatio);
+  await shot('p2-phone-sheet');
 }
 console.log('errors:', errors.length ? errors : 'none');
 ws.close(); edge.kill();

@@ -49,18 +49,20 @@ Then open the link it prints. Works with a mouse or a phone.
 
 **What happens when you open it**
 
-PIP, the supervisor, wakes up and asks you three questions: who it's for,
-whether your helpers should check with you first, and what's taking up your
-week. Your answers pick a starting team. PIP suggests who to hire; you hire,
-rename or skip each one, and add your own. A one-minute tour covers the rest.
-Want the full valley without the questions? There's a skip link.
+PIP, the supervisor, wakes up and asks you two questions: whether your helpers
+should check with you first, and what to take off your plate first — job
+hunt, inbox & calendar, money & bills, or home & family. Your answer hires one
+manager running one team of 3 helpers. A one-minute tour covers the rest.
+Want the full valley without the questions? There's a skip link — it hires
+DASH (job hunt, inbox) and OTTO (money, home) and plays a short scripted
+morning before the sim settles into its normal, calmer pace.
 
 **Then try this**
 
 - Tap anyone to see what they're working on. Red **!** means stuck: fix it.
 - Drag a team onto a different manager to re-organise.
-- Hold a tool in the bottom dock to see what it does, then drag it next to a
-  team.
+- Hold a tool in the bottom dock (TOOLS, DATA, NOTES, RECORDER) to see what it
+  does, then drag it next to a team.
 - Drop a **RECORDER** near a team. Every "10 minutes" (45 seconds, demo time)
   it posts a recap of what they did, what got stuck and what's waiting on you.
 - Pinch or Ctrl+scroll to zoom. Press **F** to fit everything on screen.
