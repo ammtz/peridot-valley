@@ -108,7 +108,7 @@ function HiringCard({ sim }: { sim: Sim }) {
   return (
     <div onClick={(e) => e.stopPropagation()}>
       <div style={{ marginBottom: 12 }}>
-        <b>{cur.name}</b> · would run <b>{cur.runs}</b> — {cur.teams.length} teams, {helperCount(cur)} helpers
+        <b>{cur.name}</b> · would run <b>{cur.runs}</b> — {cur.teams.length} {cur.teams.length === 1 ? 'team' : 'teams'}, {helperCount(cur)} {helperCount(cur) === 1 ? 'helper' : 'helpers'}
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button style={primaryBtn} onClick={() => sim.hireCurrent()}>HIRE</button>

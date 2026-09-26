@@ -34,7 +34,7 @@ export function TitleBar({ agentCount, mgrCount, rv }: { agentCount: number; mgr
         <span style={{ width: 11, height: 11, background: '#15140f', borderRadius: 3 }} />
         <span style={{ fontWeight: 800, fontSize: 13, letterSpacing: '.16em', color: '#15140f' }}>PERIDOT VALLEY</span>
         <span style={{ fontWeight: 500, fontSize: 11, letterSpacing: '.04em', color: '#6b6a62', borderLeft: '1px solid #dedcd2', paddingLeft: 9 }}>
-          live · {agentCount} agents · {mgrCount} managers
+          live · {agentCount} {agentCount === 1 ? 'agent' : 'agents'} · {mgrCount} {mgrCount === 1 ? 'manager' : 'managers'}
         </span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', maxWidth: 'calc(100vw - 44px)', fontSize: 9.5, fontWeight: 700, letterSpacing: '.06em', color: '#6b6a62' }}>

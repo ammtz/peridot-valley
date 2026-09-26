@@ -1,5 +1,5 @@
 import type { Agent, FeedCard, Furniture, Manager, Mood, Need, NodeKind, Sel, Settings, Team, WorldModel } from './types';
-import { BLOCKERS, DOCK_TIP, FEARS, FR, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic } from './constants';
+import { BLOCKERS, DOCK_TIP, FEARS, FR, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic, plural } from './constants';
 import { blank, desks, roomH, roomW, seed } from './seed';
 import { genericAgents, genericTeamPool, helperCount, pickPreset, Q2_OPTIONS, type PresetManagerSeed } from './presets';
 import { decide, type DecideState } from './decider';
@@ -271,7 +271,7 @@ export class Sim {
       this.setSpeech('Want to add your own?');
     } else {
       const nx = this.currentHire()!;
-      this.setSpeech(nx.name + ' would run ' + nx.runs + ' — ' + nx.teams.length + ' teams, ' + helperCount(nx) + ' helpers');
+      this.setSpeech(nx.name + ' would run ' + nx.runs + ' — ' + plural(nx.teams.length, 'team') + ', ' + plural(helperCount(nx), 'helper'));
     }
     this.dirty = true;
     this.notify();
@@ -959,7 +959,7 @@ export class Sim {
         T.state = 'active';
         T.born = t;
         T.fireAt = t + 0.2;
-        this.card('LIVE', this.pathName('tax'), '', 'TAXES team is live with ' + this.members(T).length + ' agents.');
+        this.card('LIVE', this.pathName('tax'), '', 'TAXES team is live with ' + plural(this.members(T).length, 'agent') + '.');
       }
     } else if (action === 'groc') {
       const T = this.team('groc');
@@ -1226,7 +1226,7 @@ export class Sim {
       case 'flow':
         return { text: 'On a roll. ' + (a.recent || []).length + ' done back to back.', why: 'finishing fast' };
       case 'overwhelmed':
-        return { text: a.backlog.length + (a.doing ? 1 : 0) + ' things on my plate. Where do I even start?', why: a.backlog.length + ' queued' };
+        return { text: plural(a.backlog.length + (a.doing ? 1 : 0), 'thing') + ' on my plate. Where do I even start?', why: a.backlog.length + ' queued' };
       case 'bored':
         return { text: 'Nothing in my queue. Got anything for me?', why: 'empty backlog' };
       case 'frustrated':
@@ -1279,7 +1279,7 @@ export class Sim {
       if (T.state === 'hidden') return 'proposed';
       if (T.state === 'pending') return 'pending';
       const mem = this.members(T);
-      return mem.length + ' agents · ' + mem.filter((a) => a.doing).length + ' in work';
+      return plural(mem.length, 'agent') + ' · ' + mem.filter((a) => a.doing).length + ' in work';
     };
     const reportRows = (id: string) => {
       const rows: { name: string; stat: string; dotR: string; dotBg: string; go: () => void }[] = [];
@@ -1288,7 +1288,7 @@ export class Sim {
         .forEach((s) =>
           rows.push({
             name: s.name,
-            stat: 'manager · ' + (m.teams.filter((T) => T.boss === s.id).length + Object.values(m.sups).filter((o) => o.boss === s.id).length) + ' reports',
+            stat: 'manager · ' + plural(m.teams.filter((T) => T.boss === s.id).length + Object.values(m.sups).filter((o) => o.boss === s.id).length, 'report'),
             dotR: '50%',
             dotBg: '#15140f',
             go: () => this.select({ kind: 'sup', id: s.id }),
@@ -1361,7 +1361,7 @@ export class Sim {
       wy = T.y;
       r = roomW(mem.length) / 2;
       p.title = T.name;
-      p.sub = (this.chain(T.boss).join(' › ') || 'PIP') + ' · ' + mem.length + ' agents';
+      p.sub = (this.chain(T.boss).join(' › ') || 'PIP') + ' · ' + plural(mem.length, 'agent');
       p.hasEdit = true;
       p.nameVal = T.name;
       p.onName = (v: string) => {
@@ -1461,7 +1461,7 @@ export class Sim {
       p.noRows = !rows.length;
       p.noRowsText = 'No reports yet. Drop a team or manager on ' + s.name + '.';
       if (s.id === 'pip') {
-        p.sub = 'PRIME SUPERVISOR · ' + m.teams.filter((T) => T.state === 'active').length + ' teams running';
+        p.sub = 'PRIME SUPERVISOR · ' + plural(m.teams.filter((T) => T.state === 'active').length, 'team') + ' running';
         const vNeeds = this.visibleNeeds();
         p.hasNeeds = true;
         p.needCount = vNeeds.length;
@@ -1573,7 +1573,7 @@ export class Sim {
         kind: F.type,
         t,
         label: D.name,
-        sub: nOn + ' on · ' + this.inRange(F).length + ' teams',
+        sub: nOn + ' on · ' + plural(this.inRange(F).length, 'team'),
         showRange: isSel || dragging,
         rL: -FR,
         rD: FR * 2,

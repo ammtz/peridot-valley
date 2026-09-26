@@ -26,7 +26,9 @@ export function Feed({ rv }: { rv: any }) {
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 800, fontSize: 13, letterSpacing: '.1em' }}>PIP → YOU</div>
-          <div style={{ fontWeight: 500, fontSize: 10.5, color: '#6b6a62', marginTop: 2 }}>{rv.teamCount} teams · {rv.mgrCount} managers · {rv.furnCount} objects</div>
+          <div style={{ fontWeight: 500, fontSize: 10.5, color: '#6b6a62', marginTop: 2 }}>
+            {rv.teamCount} {rv.teamCount === 1 ? 'team' : 'teams'} · {rv.mgrCount} {rv.mgrCount === 1 ? 'manager' : 'managers'} · {rv.furnCount} {rv.furnCount === 1 ? 'object' : 'objects'}
+          </div>
         </div>
         <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#15140f', opacity: rv.liveOp }} />
         <button onClick={rv.toggleFeed} style={{ width: 28, height: 28, border: '2px solid #15140f', borderRadius: 8, background: 'transparent', fontWeight: 800, fontSize: 13, color: '#15140f', cursor: 'pointer' }}>×</button>
