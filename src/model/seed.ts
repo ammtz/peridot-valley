@@ -1,4 +1,5 @@
 import type { Agent, Furniture, Manager, Need, Team, WorldModel } from './types';
+import { CURRENT_V } from './constants';
 
 type SupSeed = [string, string, string, number, number, number, string | null];
 type AgentSeed = [string, string, string | null, string[], string[], Partial<Agent>?];
@@ -88,13 +89,13 @@ export function seed(): WorldModel {
     { id: 'fx-db', type: 'db', x: 300, y: 730, on: [true, true, false, false] },
     { id: 'fx-mcp', type: 'mcp', x: 810, y: 720, on: [true, false, true, false, false] },
   ];
-  return { v: 3, sups, teams, agents, furn, needs: NEEDS.map((n) => ({ ...n })), feed };
+  return { v: CURRENT_V, sups, teams, agents, furn, needs: NEEDS.map((n) => ({ ...n })), feed };
 }
 
 /** The opening screen: PIP alone, nothing hired yet. */
 export function blank(): WorldModel {
   return {
-    v: 3,
+    v: CURRENT_V,
     sups: { pip: { id: 'pip', name: 'PIP', role: 'PRIME SUPERVISOR', x: 540, y: 200, size: 58, boss: null } },
     teams: [],
     agents: [],

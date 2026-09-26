@@ -237,6 +237,27 @@ if (!MOBILE) {
   await clickByText('YES, FROM SCRATCH'); await sleep(600);
   const after = await js("JSON.parse(localStorage.getItem('the-system-live-v4')||'null')");
   console.log('after RESET, storage empty:', after === null, '| back on wake screen:', (await feedText()).includes('tap to wake'));
+
+  // T5: a v3 save (no snoozeUntil key at all, the shape the live site still writes)
+  // must load without throwing, and migrate() should bring it up to v4 on save.
+  const migrateInfo = await js(`(()=>{
+    const v3 = {
+      v: 3,
+      sups: { pip: { id: 'pip', name: 'PIP', role: 'PRIME SUPERVISOR', x: 540, y: 200, size: 58, boss: null } },
+      teams: [], agents: [], furn: [],
+      needs: [{ id: 'n1', team: 'money', text: 'old-shape need', acts: [['GO AHEAD','ack']] }],
+      feed: [], onboarded: true,
+    };
+    localStorage.setItem('the-system-live-v4', JSON.stringify(v3));
+    return true;
+  })()`);
+  await js('location.reload()'); await sleep(2500);
+  const migrated = await js("(()=>{const sim=window.__sim; return { threw: false, v: sim.m.v, hasSnoozeKey: 'snoozeUntil' in sim.m.needs[0] };})()");
+  console.log('T5 v3 save loads without throwing and migrates to v4:', migrateInfo && migrated.v === 4 && migrated.hasSnoozeKey, JSON.stringify(migrated));
+  await js("window.__sim.save()");
+  const savedV = await js("JSON.parse(localStorage.getItem('the-system-live-v4')||'null')?.v");
+  console.log('T5 next save() persists v4:', savedV === 4, savedV);
+  await js("localStorage.removeItem('the-system-live-v4')");
 } else {
   await shot('p1-phone');
   // U2: -/%/+ zoom buttons are gone on phone (pinch works instead) -- read zoom straight off the sim.

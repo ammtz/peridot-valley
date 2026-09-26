@@ -1,6 +1,8 @@
 import type { FurnKind, Mood } from './types';
 
 export const KEY = 'the-system-live-v4';
+/** T5: bump whenever demo-v2 changes the saved shape, and add the fill-in to Sim.migrate(). */
+export const CURRENT_V = 4;
 
 export const cap = (x: string) => (x ? x[0].toUpperCase() + x.slice(1) : x);
 /** V5: "N word(s)" — pass the plural form only when it isn't just `word + 's'`. */

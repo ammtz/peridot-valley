@@ -1,5 +1,5 @@
 import type { Agent, FeedCard, Furniture, Manager, Mood, Need, NodeKind, Sel, Settings, Team, WorldModel } from './types';
-import { BLOCKERS, DOCK_TIP, FEARS, FR, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic, plural } from './constants';
+import { BLOCKERS, CURRENT_V, DOCK_TIP, FEARS, FR, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic, plural } from './constants';
 import { blank, desks, roomH, roomW, seed } from './seed';
 import { genericAgents, genericTeamPool, helperCount, pickPreset, Q2_OPTIONS, type PresetManagerSeed } from './presets';
 import { decide, type DecideState } from './decider';
@@ -420,10 +420,24 @@ export class Sim {
     }
   }
 
+  /** T5: fills in defaults for every field added since v3, then bumps to CURRENT_V so
+   *  the next save() writes the new shape. An old (v3) save from the live site must
+   *  load without throwing -- this is the one place allowed to assume a field is missing. */
+  migrate(s: WorldModel) {
+    if (s.v >= CURRENT_V) return;
+    // v3 -> v4 (demo-v2): Need.snoozeUntil (U6, LATER) is new and optional -- a v3
+    // save simply won't have the key, which is already a valid "not snoozed" state,
+    // but every need gets the key explicitly so nothing downstream has to guess.
+    (s.needs || []).forEach((n: Need) => {
+      if (!('snoozeUntil' in n)) n.snoozeUntil = undefined;
+    });
+    s.v = CURRENT_V;
+  }
   load(): WorldModel | null {
     try {
       const s = JSON.parse(localStorage.getItem(KEY) || 'null');
-      if (!s || (s.v !== 3 && s.v !== 4)) return null;
+      if (!s || (s.v !== 3 && s.v !== CURRENT_V)) return null;
+      this.migrate(s);
       s.teams.forEach((T: Team) => {
         T.born = null;
         T.fireAt = null;
