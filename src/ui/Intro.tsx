@@ -153,9 +153,7 @@ export function Intro({ sim }: { sim: Sim }) {
     if (!done) {
       sim.finishSpeech();
       sim.notify();
-      return;
     }
-    if (phase === 'greet') sim.advanceGreet();
   };
 
   return (
@@ -172,6 +170,7 @@ export function Intro({ sim }: { sim: Sim }) {
       {phase !== 'sleep' && (
         <div style={{ ...card, marginBottom: 100 }} onClick={tap}>
           <div style={{ whiteSpace: 'pre-line' }}>{shown}</div>
+          {done && phase === 'greet' && <AnswerButtons options={[['go', "Let's go"]]} onPick={() => sim.advanceGreet()} />}
           {done && phase === 'q1' && <AnswerButtons options={[['yes', 'Yes, ask me first'], ['no', 'No, just handle it']]} onPick={(v) => sim.answerQ1(v === 'yes')} />}
           {done && phase === 'q2' && <AnswerButtons options={sim.q2Options()} onPick={(v) => sim.answerQ2(v)} />}
           {phase === 'hiring' && <div style={{ marginTop: 12 }}><HiringCard sim={sim} /></div>}
