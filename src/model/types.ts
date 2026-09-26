@@ -67,7 +67,7 @@ export interface Need {
   snoozeUntil?: number;
 }
 
-export type FeedKind = 'DONE' | 'MOVED' | 'ORG' | 'EQUIP' | 'LIVE' | 'YOU' | 'STUCK' | 'ASKS' | 'RECAP' | 'HANDLED';
+export type FeedKind = 'DONE' | 'MOVED' | 'ORG' | 'EQUIP' | 'LIVE' | 'YOU' | 'STUCK' | 'ASKS' | 'RECAP' | 'HANDLED' | 'PIP';
 
 export interface FeedCard {
   id: string;

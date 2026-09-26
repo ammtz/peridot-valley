@@ -404,7 +404,7 @@ export class Sim {
       this.storyBillsStuckDone = true;
       if (bills) {
         this.makeBlocked(bills);
-        this.card('YOU', this.pathName('money'), 'PIP', ' noticed within 2 seconds. Tap BILLS to fix it.');
+        this.card('PIP', this.pathName('money'), 'PIP', ' noticed within 2 seconds. Tap BILLS to fix it.');
       }
     }
     const fixed = !bills || !bills.blocked;
