@@ -214,7 +214,9 @@ export class Sim {
         ty = my + 230;
       m.teams.push({ id: ts.id, name: ts.name, boss: mgr.id, x: tx, y: ty, state: 'active', pool: ts.pool.slice(), pi: 0, born: t + j * 0.35 });
       ts.agents.forEach((a) => {
-        m.agents.push({ id: ts.id + '-' + a.n.toLowerCase(), name: a.n, role: a.role, team: ts.id, doing: a.doing, backlog: a.backlog.slice(), done: a.done.slice(), blocked: null, fear: null, ...(a.extra || {}) });
+        const extra = { ...(a.extra || {}) };
+        delete extra.blocked;
+        m.agents.push({ id: ts.id + '-' + a.n.toLowerCase(), name: a.n, role: a.role, team: ts.id, doing: a.doing, backlog: a.backlog.slice(), done: a.done.slice(), blocked: null, fear: null, ...extra });
       });
       if (first && j === 0 && this.pendingContext) {
         m.furn.push({ id: 'ctx' + Date.now().toString(36), type: 'books', x: tx + 90, y: ty + 30, on: [true, false, false, false, false], born: t + 0.4 });
@@ -1079,7 +1081,7 @@ export class Sim {
     a.blocked = null;
     this.removeNeeds(a.id, 'blocked');
     this.card('YOU', this.pathName(a.team), a.name, ' is unblocked and back at it.');
-    if (this.tourOn && this.tourStep === 1 && this.tourWaiting && a.id === this.tourBlockedAgentId) {
+    if (this.tourOn && this.tourStep === 1 && this.tourWaiting) {
       this.tourWaiting = false;
       this.tourAdvanceAfterFix();
     }
