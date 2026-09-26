@@ -1,7 +1,7 @@
 import type { Agent, FeedCard, Furniture, Manager, Mood, Need, NodeKind, Sel, Settings, Team, WorldModel } from './types';
 import { BLOCKERS, DOCK_TIP, FEARS, FR, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic } from './constants';
 import { blank, desks, roomH, roomW, seed } from './seed';
-import { genericAgents, genericTeamPool, helperCount, pickPreset, Q3_PERSONAL, Q3_WORK, type PresetManagerSeed } from './presets';
+import { genericAgents, genericTeamPool, helperCount, pickPreset, Q2_OPTIONS, type PresetManagerSeed } from './presets';
 
 type DragKind = 'pan' | 'team' | 'sup' | 'furn' | 'agent' | 'newfurn' | 'ghost';
 
@@ -49,11 +49,10 @@ export class Sim {
   // --- onboarding: opening, three questions, hiring, tour ---
   freshParam = false;
   introOn = false;
-  introPhase: 'sleep' | 'greet' | 'q1' | 'q2' | 'q3' | 'hiring' | 'addteam' | null = null;
+  introPhase: 'sleep' | 'greet' | 'q1' | 'q2' | 'hiring' | 'addteam' | null = null;
   pipAsleep = false;
   speechText = '';
   speechAt = 0;
-  who: 'me' | 'work' | null = null;
   askFirst = false;
   fearMult = 1;
   hireQueue: PresetManagerSeed[] = [];
@@ -65,6 +64,13 @@ export class Sim {
   addTeamCount = 0;
   addTeamValue = '';
   tourOn = false;
+  // --- the scripted first-minute story, full valley only (see startStory) ---
+  storyOn = false;
+  storyStart = 0;
+  storyScoutDone = false;
+  storyBillsPaidDone = false;
+  storyBillsStuckDone = false;
+  storyRecapDone = false;
   tourStep = 0;
   tourStepStart = 0;
   tourWaiting = false;
@@ -148,13 +154,13 @@ export class Sim {
     if (this.introPhase !== 'sleep') return;
     this.pipAsleep = false;
     this.introPhase = 'greet';
-    this.setSpeech("Hi. I'm PIP. I run a team of helpers so you don't have to watch them. Three questions, and I'll hire your first team.");
+    this.setSpeech("Hi. I'm PIP. I run a team of helpers so you don't have to watch them. Two questions, and I'll hire your first team.");
     this.notify();
   }
   advanceGreet() {
     if (this.introPhase !== 'greet') return;
     this.introPhase = 'q1';
-    this.setSpeech('Who is this for?');
+    this.setSpeech('Should they check with you before anything important?');
     this.notify();
   }
   skipIntro() {
@@ -165,29 +171,24 @@ export class Sim {
     this.tourOn = false;
     this.pipAsleep = false;
     this.dirty = true;
+    if (!this.m.storyDone) this.startStory();
     this.save();
     this.fitView();
     this.notify();
   }
-  answerQ1(who: 'me' | 'work') {
-    this.who = who;
-    this.introPhase = 'q2';
-    this.setSpeech('Should they check with you before anything important?');
-    this.notify();
-  }
-  answerQ2(ask: boolean) {
+  answerQ1(ask: boolean) {
     this.askFirst = ask;
     this.pendingContext = ask;
     this.fearMult = ask ? 2 : 0.5;
-    this.introPhase = 'q3';
-    this.setSpeech(this.who === 'me' ? "What's on your mind most?" : 'What eats your week?');
+    this.introPhase = 'q2';
+    this.setSpeech('What should your helpers take off your plate first?');
     this.notify();
   }
-  q3Options(): [string, string][] {
-    return this.who === 'work' ? Q3_WORK : Q3_PERSONAL;
+  q2Options(): [string, string][] {
+    return Q2_OPTIONS;
   }
-  answerQ3(focusKey: string) {
-    const preset = pickPreset(this.who || 'me', focusKey);
+  answerQ2(focusKey: string) {
+    const preset = pickPreset(focusKey);
     this.hireQueue = preset.managers;
     this.hireIndex = 0;
     this.anyHired = false;
@@ -371,6 +372,49 @@ export class Sim {
   }
   tourSkip() {
     this.tourEnd();
+  }
+
+  // --- the scripted first minute (full valley / skip path only, once per saved valley) ---
+  startStory() {
+    this.storyOn = true;
+    this.storyStart = NOW();
+    this.storyScoutDone = false;
+    this.storyBillsPaidDone = false;
+    this.storyBillsStuckDone = false;
+    this.storyRecapDone = false;
+  }
+  tickStory(t: number) {
+    if (!this.storyOn) return;
+    const el = t - this.storyStart;
+    const bills = this.agent('money-bills');
+    const scout = this.agent('job-scout');
+    if (!this.storyBillsPaidDone && el >= 5) {
+      this.storyBillsPaidDone = true;
+      if (bills && bills.doing) this.complete(bills, t);
+    }
+    if (!this.storyScoutDone && el >= 8) {
+      this.storyScoutDone = true;
+      if (scout) {
+        scout.doing = 'Found 12 new postings overnight';
+        this.complete(scout, t);
+      }
+    }
+    if (!this.storyBillsStuckDone && el >= 15) {
+      this.storyBillsStuckDone = true;
+      if (bills) {
+        this.makeBlocked(bills);
+        this.card('YOU', this.pathName('money'), 'PIP', ' noticed within 2 seconds. Tap BILLS to fix it.');
+      }
+    }
+    const fixed = !bills || !bills.blocked;
+    if (this.storyBillsStuckDone && !this.storyRecapDone && (fixed || el >= 60)) {
+      this.storyRecapDone = true;
+      this.storyOn = false;
+      this.card('RECAP', 'MORNING', '', 'Morning recap: 12 new jobs found, 1 bill paid, 1 thing needed you, and you fixed it.');
+      this.m.storyDone = true;
+      this.dirty = true;
+      this.save();
+    }
   }
 
   load(): WorldModel | null {
@@ -869,8 +913,9 @@ export class Sim {
 
   step() {
     const t = NOW();
+    this.tickStory(t);
     const speed = { slow: 1.8, normal: 1, fast: 0.45 }[this.settings.simSpeed] || 1;
-    if (t > this.nextSim) {
+    if (!this.storyOn && t > this.nextSim) {
       this.nextSim = t + (2.4 + Math.random() * 2.4) * speed;
       const dragA = this.drag && this.drag.kind === 'agent' ? this.drag.id : null;
       const live = this.m.agents.filter((a) => {
@@ -885,8 +930,9 @@ export class Sim {
       const nBlk = live.filter((a) => a.blocked).length,
         nFear = live.filter((a) => a.fear).length;
       const r = Math.random();
-      const blockedP = 0.09,
-        fearP = blockedP + 0.07 * this.fearMult,
+      // Halved from the original 0.09 / +0.07 — PIP should ask less.
+      const blockedP = 0.045,
+        fearP = blockedP + 0.035 * this.fearMult,
         inflowP = fearP + 0.24;
       if (r < blockedP && nBlk < 2 && free.length) this.makeBlocked(pick(free));
       else if (r < fearP && nFear < 2 && free.length) this.makeFear(pick(free));
@@ -980,19 +1026,32 @@ export class Sim {
   removeNeeds(aid: string, kind: 'blocked' | 'fear') {
     this.m.needs = this.m.needs.filter((n) => !(n.agent === aid && n.kind === kind));
   }
+  /** PIP shows at most 3 open asks, and never two with the same text. Beyond that, an ask is dropped. */
+  pushNeed(nd: Need) {
+    if (this.m.needs.some((n) => n.text === nd.text)) return;
+    if (this.m.needs.length >= 3) return;
+    this.m.needs.unshift(nd);
+  }
   makeBlocked(a: Agent) {
     const [text, fix] = BLOCKERS[a.team] || BLOCKERS._;
     a.blocked = { text, fix };
     this.removeNeeds(a.id, 'blocked');
-    this.m.needs.unshift({ id: 'nb' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'blocked', text: a.name + ' is stuck: ' + text + '.', acts: [[fix, 'unblock'], ['LATER', 'skip']] });
+    this.pushNeed({ id: 'nb' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'blocked', text: a.name + ' is stuck: ' + text + '.', acts: [[fix, 'unblock'], ['LATER', 'skip']] });
     this.card('STUCK', this.pathName(a.team), a.name, ' is stuck: ' + text + '.');
     this.evLog.push({ t: NOW(), team: a.team, kind: 'stuck', who: a.name, text });
   }
   makeFear(a: Agent) {
     const f = FEARS[a.team] || FEARS._;
+    // "No, just handle it" — PIP resolves most asks itself instead of interrupting you.
+    if (!this.askFirst && Math.random() < 0.7) {
+      this.card('HANDLED', this.pathName(a.team), 'PIP', ' handled it: ' + a.name + ' skipped ' + f + '.');
+      this.evLog.push({ t: NOW(), team: a.team, kind: 'fear', who: a.name, text: f });
+      this.complete(a, NOW());
+      return;
+    }
     a.fear = f;
     this.removeNeeds(a.id, 'fear');
-    this.m.needs.unshift({ id: 'nf' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'fear', text: a.name + ' wants your OK before ' + f + '.', acts: [['GO AHEAD', 'approve'], ['HOLD OFF', 'hold']] });
+    this.pushNeed({ id: 'nf' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'fear', text: a.name + ' wants your OK before ' + f + '.', acts: [['GO AHEAD', 'approve'], ['HOLD OFF', 'hold']] });
     this.card('ASKS', this.pathName(a.team), a.name, ' wants your OK before ' + f + '.');
     this.evLog.push({ t: NOW(), team: a.team, kind: 'fear', who: a.name, text: f });
   }
@@ -1607,6 +1666,7 @@ export class Sim {
         .map((F) => FT[F.type].short)
         .filter((v, j, arr) => arr.indexOf(v) === j)
         .join(' · ');
+      const anyStuck = mem.some((a) => a.blocked);
       rooms.push({
         id: T.id,
         l: T.x - w / 2,
@@ -1620,7 +1680,7 @@ export class Sim {
         ro: 0.5 * (1 - cl(fe / 0.7, 0, 1)),
         rs: 1 + cl(fe / 0.7, 0, 1) * 0.35,
         bg: pend ? 'rgba(251,250,245,.55)' : hot ? '#ffffff' : '#fbfaf5',
-        border: pend ? '2px dashed rgba(21,20,15,.28)' : hot ? '3px solid #15140f' : '2px solid #15140f',
+        border: pend ? '2px dashed rgba(21,20,15,.28)' : anyStuck ? '3px solid #d63c2f' : hot ? '3px solid #15140f' : '2px solid #15140f',
         shadow: pend ? 'none' : isSel || hot ? '0 4px 0 rgba(21,20,15,.1), 0 0 0 6px rgba(21,20,15,.1)' : '0 4px 0 rgba(21,20,15,.1)',
         labelColor: pend ? '#6b6a62' : '#15140f',
         name: T.name,
@@ -1747,7 +1807,7 @@ export class Sim {
     const cards = m.feed.map((c) => {
       const pr = cl((nowMs - c.ts) / 500, 0, 1);
       const filled = c.kind !== 'DONE' && c.kind !== 'MOVED';
-      const kc = c.kind === 'STUCK' ? '#d63c2f' : c.kind === 'ASKS' ? '#e8b923' : null;
+      const kc = c.kind === 'STUCK' ? '#d63c2f' : c.kind === 'ASKS' ? '#e8b923' : c.kind === 'HANDLED' ? '#3aa865' : null;
       return {
         id: c.id,
         kind: c.kind,
