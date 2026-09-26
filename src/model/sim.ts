@@ -900,6 +900,11 @@ export class Sim {
       }
     } else if (action === 'ack') {
       this.card('YOU', this.pathName(nd.team), '', nd.ok || 'Marked handled.');
+    } else if (action === 'skip') {
+      nd.snoozeUntil = t + 60;
+      this.m.needs.unshift(nd);
+      const a = nd.agent ? this.agent(nd.agent) : null;
+      this.card('YOU', this.pathName(nd.team), a ? a.name : '', " can wait. I'll bring it back in a minute.");
     }
     this.dirty = true;
     this.notify();
@@ -1036,10 +1041,15 @@ export class Sim {
   removeNeeds(aid: string, kind: 'blocked' | 'fear') {
     this.m.needs = this.m.needs.filter((n) => !(n.agent === aid && n.kind === kind));
   }
+  /** Open asks, minus any snoozed by `act(nd,'skip')` until their 60s is up. */
+  visibleNeeds(): Need[] {
+    const t = NOW();
+    return this.m.needs.filter((n) => !n.snoozeUntil || n.snoozeUntil <= t);
+  }
   /** PIP shows at most 3 open asks, and never two with the same text. Beyond that, an ask is dropped. */
   pushNeed(nd: Need) {
     if (this.m.needs.some((n) => n.text === nd.text)) return;
-    if (this.m.needs.length >= 3) return;
+    if (this.visibleNeeds().length >= 3) return;
     this.m.needs.unshift(nd);
   }
   makeBlocked(a: Agent) {
@@ -1358,10 +1368,11 @@ export class Sim {
       p.noRowsText = 'No reports yet. Drop a team or manager on ' + s.name + '.';
       if (s.id === 'pip') {
         p.sub = 'PRIME SUPERVISOR · ' + m.teams.filter((T) => T.state === 'active').length + ' teams running';
+        const vNeeds = this.visibleNeeds();
         p.hasNeeds = true;
-        p.needCount = m.needs.length;
-        p.noNeeds = m.needs.length === 0;
-        p.needs = m.needs.map((nd) => ({
+        p.needCount = vNeeds.length;
+        p.noNeeds = vNeeds.length === 0;
+        p.needs = vNeeds.map((nd) => ({
           path: this.pathName(nd.team),
           text: nd.text,
           acts: nd.acts.map(([label, action], i) => ({ label, bg: i === 0 ? '#15140f' : 'transparent', fg: i === 0 ? '#f4f3ee' : '#15140f', go: () => this.act(nd, action) })),
@@ -1768,8 +1779,8 @@ export class Sim {
         name: s.name,
         role: s.role,
         nameSize: prime ? 13 : 12,
-        hasBadge: prime && m.needs.length > 0,
-        badge: m.needs.length,
+        hasBadge: prime && this.visibleNeeds().length > 0,
+        badge: this.visibleNeeds().length,
         badgeSc: 1 + 0.06 * Math.sin(t * 4),
         down: (e: React.PointerEvent) => this.nodeDown(e, 'sup', s.id),
       });
