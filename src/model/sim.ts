@@ -1983,7 +1983,8 @@ export class Sim {
         return T && T.state === 'active';
       }).length,
       teamCount: m.teams.filter((T) => T.state === 'active').length,
-      mgrCount: Object.keys(S).length,
+      // V1: PIP is the prime supervisor, not a "manager" — don't count her.
+      mgrCount: Object.keys(S).length - 1,
       furnCount: m.furn.length,
       zoomPct: Math.round(z * 100),
       zoomIn: () => {
