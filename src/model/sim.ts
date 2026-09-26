@@ -111,6 +111,8 @@ export class Sim {
   settings: Settings = { simSpeed: 'normal', alwaysShowNames: false, thoughts: 'icons' };
   notify: () => void = () => {};
   raf = 0;
+  /** T4: counts actual notify()/re-render triggers -- exposed for the drive.mjs render-count check. */
+  renderTicks = 0;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -456,10 +458,22 @@ export class Sim {
 
   start() {
     this.fitView();
+    // T4: don't force a full-tree React re-render every animation frame. Only when
+    // something actually changed (dirty), an interaction needs live feedback (drag),
+    // an animation is mid-flight (pulses), or on a low-rate heartbeat so idle-but-
+    // time-based UI (the typewriter, "3s ago" timestamps) still drifts forward.
+    const HEARTBEAT = 0.15;
+    let lastHeartbeat = 0;
     const loop = () => {
       this.raf = requestAnimationFrame(loop);
       this.step();
-      this.notify();
+      const t = NOW();
+      const dueForHeartbeat = t - lastHeartbeat >= HEARTBEAT;
+      if (this.dirty || this.drag || this.pulses.length > 0 || dueForHeartbeat) {
+        if (dueForHeartbeat) lastHeartbeat = t;
+        this.renderTicks++;
+        this.notify();
+      }
     };
     loop();
   }
