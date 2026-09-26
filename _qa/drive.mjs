@@ -35,6 +35,7 @@ async function drag(x0, y0, x1, y1) {
 async function tap(x, y) { await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y); await sleep(500); }
 const feedText = () => js('document.body.innerText');
 const clickByText = (name) => js(`(()=>{const el=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(name)});if(!el)return false;el.click();return true;})()`);
+const clickByPartial = (needle) => js(`(()=>{const el=[...document.querySelectorAll('button')].find(b=>b.textContent.includes(${JSON.stringify(needle)}));if(!el)return false;el.click();return true;})()`);
 const rectOfButton = (name) => js(`(()=>{const el=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(name)});if(!el)return null;const r=el.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];})()`);
 
 await cdp('Runtime.enable'); await cdp('Page.enable');
@@ -93,7 +94,8 @@ console.log('stop1 cleared after the fix:', !(await js('window.__sim.tourWaiting
 
 await js('window.__sim.tourNext()');
 await sleep(3000);
-console.log('dock visible at stop2:', (await feedText()).includes('TOOLS'));
+// U2: on phone the dock is a single "+" button behind a sheet, not a TOOLS grid.
+console.log('dock visible at stop2:', MOBILE ? await js("!!document.getElementById('phone-add-btn')") : (await feedText()).includes('TOOLS'));
 await shot('o6-tour-stop2');
 await js("window.__sim.placeFurn('mcp', 400, 500)");
 console.log('tool-placed flag set:', await js('window.__sim.tourToolPlaced'));
@@ -108,7 +110,7 @@ await js('window.__sim.tourNext()');
 await sleep(1000);
 console.log('onboarded after tour end:', await js('window.__sim.m.onboarded'));
 console.log('tourOn after end:', await js('window.__sim.tourOn'));
-console.log('dock + feed present at end:', (await feedText()).includes('TOOLS') && (await feedText()).includes('PIP'));
+console.log('dock + feed present at end:', (MOBILE ? await js("!!document.getElementById('phone-add-btn')") : (await feedText()).includes('TOOLS')) && (await feedText()).includes('PIP'));
 await shot('o8-end');
 const savedOnboarded = await js("JSON.parse(localStorage.getItem('the-system-live-v4')||'null')?.onboarded");
 console.log('onboarded persisted to storage:', savedOnboarded);
@@ -123,7 +125,9 @@ if (!MOBILE) {
   await js("localStorage.removeItem('the-system-live-v4'); location.reload()"); await sleep(2500);
   await js('window.__sim.skipIntro()'); await sleep(500);
   console.log('skip loads the full valley agent count (12):', await js('window.__sim.m.agents.length'));
-  await js("window.__sim.select({kind:'sup', id:'pip'})"); await sleep(400); await shot('t1-pip-popup');
+  // U5: the primary-action pill reads the live needs count and its tap opens PIP's sheet.
+  console.log('U5 pill reads needs count:', /things? need you|All clear/.test(await feedText()));
+  await clickByPartial('need you'); await sleep(400); await shot('t1-pip-popup');
   console.log('PIP popup shows NEEDS YOU:', (await feedText()).includes('NEEDS YOU'));
   await js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))"); await sleep(300);
 
@@ -154,17 +158,41 @@ if (!MOBILE) {
   console.log('after RESET, storage empty:', after === null, '| back on wake screen:', (await feedText()).includes('tap to wake'));
 } else {
   await shot('p1-phone');
+  // U2: -/%/+ zoom buttons are gone on phone (pinch works instead) -- read zoom straight off the sim.
   const t = (type, pts) => cdp('Input.dispatchTouchEvent', { type, touchPoints: pts });
   await t('touchStart', [{ x: 150, y: 400, id: 1 }, { x: 240, y: 400, id: 2 }]);
   for (let i = 1; i <= 8; i++) { await t('touchMove', [{ x: 150 - i * 12, y: 400, id: 1 }, { x: 240 + i * 12, y: 400, id: 2 }]); await sleep(30); }
   await t('touchEnd', []); await sleep(400);
-  console.log('zoom label after pinch:', (await feedText()).match(/\d+%/)?.[0]);
+  console.log('zoom after pinch:', await js('window.__sim.zoom'));
 
   // Phone: popups/feed open as a bottom sheet, no taller than ~55% of the viewport, town visible above.
   await js("window.__sim.select({kind:'sup', id:'pip'})"); await sleep(500);
   const sheetRatio = await js("(()=>{const el=document.querySelector('[data-bottom-sheet]');if(!el)return null;const r=el.getBoundingClientRect();return r.height/window.innerHeight;})()");
   console.log('phone bottom sheet height <= 60% of viewport:', sheetRatio != null && sheetRatio <= 0.6, sheetRatio);
   await shot('p2-phone-sheet');
+  await js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))"); await sleep(300);
+
+  // U1: a fresh phone skip opens at a readable zoom, never a squint.
+  await js("localStorage.removeItem('the-system-live-v4'); location.reload()"); await sleep(2500);
+  await js('window.__sim.skipIntro()'); await sleep(500);
+  console.log('U1 phone skip zoom >= 0.7:', await js('window.__sim.zoom >= 0.7'));
+  await shot('p3-phone-skip-zoom');
+
+  // U2: with nothing open, the old chrome (live-line, TOOLS grid) is gone and the new
+  // chrome (the ? chip, FIT, the + button, the needs pill, the feed pill) is present,
+  // and no bottom sheet is covering the world.
+  const chrome = await js(`(()=>({
+    moodChip: !!document.querySelector('[aria-label="Legend and reset"]'),
+    fitBtn: !!document.querySelector('[aria-label="Fit view"]'),
+    addBtn: !!document.getElementById('phone-add-btn'),
+    feedPill: document.body.innerText.includes('PIP → YOU'),
+    needsPill: /things? need you|All clear/.test(document.body.innerText),
+    liveLineGone: !document.body.innerText.includes('live ·'),
+    dockGridGone: !document.getElementById('dock-panel'),
+    noSheetOpen: !document.querySelector('[data-bottom-sheet]'),
+  }))()`);
+  console.log('U2 phone chrome recedes to ?/FIT/+/pills, no sheet by default:', JSON.stringify(chrome));
+  await shot('p4-phone-chrome');
 }
 console.log('errors:', errors.length ? errors : 'none');
 ws.close(); edge.kill();

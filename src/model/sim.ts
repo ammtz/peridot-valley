@@ -598,7 +598,8 @@ export class Sim {
       ah = Math.max(200, vh - topInset - bottomInset);
     const bw = x1 - x0,
       bh = y1 - y0;
-    const z = cl(Math.min(aw / bw, ah / bh), 0.3, maxZoom);
+    let z = cl(Math.min(aw / bw, ah / bh), 0.3, maxZoom);
+    if (typeof window !== 'undefined' && window.innerWidth < 560) z = Math.max(z, 0.7);
     this.zoom = z;
     this.pan = { x: 30 + (aw - bw * z) / 2 - x0 * z, y: topInset + (ah - bh * z) / 2 - y0 * z };
   }
