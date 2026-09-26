@@ -1020,7 +1020,10 @@ export class Sim {
     const task = T.pool[T.pi % T.pool.length];
     T.pi++;
     if (!a.doing && !a.blocked && !a.fear) a.doing = task;
-    else a.backlog.push(task);
+    else {
+      if (a.backlog.length >= 12) return;
+      a.backlog.push(task);
+    }
     this.dirty = true;
   }
   removeNeeds(aid: string, kind: 'blocked' | 'fear') {
