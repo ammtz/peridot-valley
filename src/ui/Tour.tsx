@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import type { Sim } from '../model/sim';
 import { roomH, roomW } from '../model/seed';
 
@@ -72,7 +73,34 @@ function spotRect(sim: Sim): { l: number; t: number; w: number; h: number } {
 }
 
 export function Tour({ sim }: { sim: Sim }) {
-  if (!sim.tourOn) return null;
+  // U8: tourEnd() sets the closing line right as tourOn goes false, so without this
+  // it never gets a render to show in. Keep it up for 5s, or until tapped.
+  const [showOutro, setShowOutro] = useState(false);
+  const wasOn = useRef(sim.tourOn);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (wasOn.current && !sim.tourOn) {
+      setShowOutro(true);
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => setShowOutro(false), 5000);
+    }
+    wasOn.current = sim.tourOn;
+  }, [sim.tourOn]);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  if (!sim.tourOn && !showOutro) return null;
+
+  if (!sim.tourOn) {
+    // Outro only: no spotlight, no NEXT/skip — just PIP's line, dismissible by a tap.
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 900, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 'max(28px,3vh)', pointerEvents: 'none' }}>
+        <div style={{ ...card, marginBottom: 30 }} onClick={() => setShowOutro(false)}>
+          <div style={{ whiteSpace: 'pre-line' }}>{sim.speechText}</div>
+        </div>
+      </div>
+    );
+  }
+
   const shown = sim.speechShown();
   const done = sim.speechDone();
   const rect = spotRect(sim);
@@ -92,7 +120,7 @@ export function Tour({ sim }: { sim: Sim }) {
         }}
       />
       <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 'max(28px,3vh)', pointerEvents: 'none' }}>
-        <div style={{ ...card, marginBottom: sim.tourStep >= 2 ? 130 : 30 }} onClick={tap}>
+        <div style={{ ...card, marginBottom: 30 }} onClick={tap}>
           <div style={{ whiteSpace: 'pre-line' }}>{shown}</div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 14 }}>
             {canNext && (

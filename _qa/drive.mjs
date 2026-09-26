@@ -102,6 +102,10 @@ await sleep(1000);
 console.log('onboarded after tour end:', await js('window.__sim.m.onboarded'));
 console.log('tourOn after end:', await js('window.__sim.tourOn'));
 await shot('o6-tour-end');
+// U8: the closing line stays up for a few seconds after tourOn goes false.
+console.log('U8 outro line still shown right after tourOn=false:', (await feedText()).includes("It's yours now"));
+await sleep(5200);
+console.log('U8 outro line gone after ~5s:', !(await feedText()).includes("It's yours now"));
 
 // U2/U14: the dock only shows post-tour now; on phone it is the "+" button and its
 // sheet carries one-time tips for tools and the recorder (no tour stop teaches them).
