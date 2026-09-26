@@ -25,3 +25,6 @@ dist-ssr
 
 # headless QA screenshots (drive.mjs is kept as the smoke test)
 _qa/*.png
+
+.vercel
+.env*

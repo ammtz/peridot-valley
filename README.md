@@ -36,7 +36,9 @@ between visits.
 
 ## Try it
 
-A live demo is on the way. To run it yourself:
+**Live demo: [peridot-valley.vercel.app](https://peridot-valley.vercel.app)** — no sign-up, works on your phone.
+
+To run it yourself:
 
 ```bash
 npm install
