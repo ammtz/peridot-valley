@@ -1226,13 +1226,13 @@ export class Sim {
       case 'flow':
         return { text: 'On a roll. ' + (a.recent || []).length + ' done back to back.', why: 'finishing fast' };
       case 'overwhelmed':
-        return { text: plural(a.backlog.length + (a.doing ? 1 : 0), 'thing') + ' on my plate. Where do I even start?', why: a.backlog.length + ' queued' };
+        return { text: plural(a.backlog.length + (a.doing ? 1 : 0), 'thing') + ' on my plate. Where do I even start?', why: 'too much queued' };
       case 'bored':
         return { text: 'Nothing in my queue. Got anything for me?', why: 'empty backlog' };
       case 'frustrated':
-        return { text: 'Can’t finish this. ' + cap(a.blocked!.text) + '.', why: 'blocked' };
+        return { text: 'Can’t finish this. ' + cap(a.blocked!.text) + '.', why: 'needs you' };
       case 'stalled':
-        return { text: 'Not sure about ' + a.fear + '. Waiting on your OK.', why: 'afraid to proceed' };
+        return { text: 'Not sure about ' + a.fear + '. Waiting on your OK.', why: 'waiting for your OK' };
       case 'pending':
         return { text: 'Ready to start once you sign.', why: 'team not live' };
       default:

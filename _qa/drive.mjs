@@ -3,7 +3,29 @@
 // re-org/persistence regression checks, the scripted first-minute story and the
 // "PIP asks less" cap, via the "skip" path. Desktop + phone.
 import { spawn } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+// U12: one vocabulary for moods — grep the source itself for the retired words,
+// since the sim only ever names them in comments/types once fixed, never in copy.
+function grepSrcFor(words) {
+  const root = fileURLToPath(new URL('../src', import.meta.url));
+  const hits = [];
+  const walk = (dir) => {
+    for (const name of readdirSync(dir, { withFileTypes: true })) {
+      const p = dir + '/' + name.name;
+      if (name.isDirectory()) walk(p);
+      else if (/\.(ts|tsx)$/.test(name.name)) {
+        const text = readFileSync(p, 'utf8');
+        for (const w of words) if (text.includes(w)) hits.push(p + ':' + w);
+      }
+    }
+  };
+  walk(root);
+  return hits;
+}
+const u12Hits = grepSrcFor(['FRUSTRATED', 'STALLED', 'OVERWHELMED']);
+console.log('U12 no FRUSTRATED/STALLED/OVERWHELMED in src:', u12Hits.length === 0, u12Hits.length ? JSON.stringify(u12Hits) : '');
 
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const URL_ = process.argv[2] || 'http://localhost:4180/';

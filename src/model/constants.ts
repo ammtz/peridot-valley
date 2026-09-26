@@ -22,13 +22,16 @@ export const FEARS: Record<string, string> = {
   _: 'doing this without asking',
 };
 
+// U12: one vocabulary for moods — STUCK, UNSURE, SWAMPED, BORED, FLOW. `label` and
+// `tag` used to say two different things for the same mood key; now they agree,
+// and only WORKING/WAITING (not "moods" in that sense) sit outside the five.
 export const MOOD: Record<Mood, { label: string; tag: string; c: string; icon: string }> = {
   working: { label: 'WORKING', tag: '', c: '#15140f', icon: '' },
-  flow: { label: 'IN FLOW', tag: 'FLOW', c: '#3aa865', icon: '✦' },
-  overwhelmed: { label: 'OVERWHELMED', tag: 'SWAMPED', c: '#ee7a2f', icon: '' },
+  flow: { label: 'FLOW', tag: 'FLOW', c: '#3aa865', icon: '✦' },
+  overwhelmed: { label: 'SWAMPED', tag: 'SWAMPED', c: '#ee7a2f', icon: '' },
   bored: { label: 'BORED', tag: 'BORED', c: '#a9b4c4', icon: 'z' },
-  frustrated: { label: 'FRUSTRATED', tag: 'STUCK', c: '#d63c2f', icon: '!' },
-  stalled: { label: 'STALLED', tag: 'UNSURE', c: '#e8b923', icon: '?' },
+  frustrated: { label: 'STUCK', tag: 'STUCK', c: '#d63c2f', icon: '!' },
+  stalled: { label: 'UNSURE', tag: 'UNSURE', c: '#e8b923', icon: '?' },
   pending: { label: 'WAITING', tag: '', c: 'rgba(21,20,15,.2)', icon: '' },
 };
 
