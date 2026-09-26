@@ -174,7 +174,8 @@ export class Sim {
     this.dirty = true;
     if (!this.m.storyDone) this.startStory();
     this.save();
-    this.fitView();
+    if (typeof window !== 'undefined' && window.innerWidth < 560) this.centerOnOrgTop(160, 1);
+    else this.fitView();
     this.notify();
   }
   answerQ1(ask: boolean) {
@@ -541,6 +542,49 @@ export class Sim {
       add(T.x - w / 2, T.y - h / 2 - 30, T.x + w / 2, T.y + h / 2);
     });
     m.furn.forEach((F) => add(F.x - 40, F.y - 30, F.x + 40, F.y + 50));
+    const vw = window.innerWidth,
+      vh = window.innerHeight;
+    const topInset = 74;
+    const aw = Math.max(200, vw - this.feedW() - 60),
+      ah = Math.max(200, vh - topInset - bottomInset);
+    const bw = x1 - x0,
+      bh = y1 - y0;
+    let z = cl(Math.min(aw / bw, ah / bh), 0.3, maxZoom);
+    // Phones: never open on a squint. A crowded valley can compute below 0.7 to fit
+    // everything, but readable beats complete on a screen this small.
+    if (typeof window !== 'undefined' && window.innerWidth < 560) z = Math.max(z, 0.7);
+    this.zoom = z;
+    this.pan = { x: 30 + (aw - bw * z) / 2 - x0 * z, y: topInset + (ah - bh * z) / 2 - y0 * z };
+  }
+  /** Center PIP plus the first hired manager's floors — used after a phone skip, where fitting
+   *  the whole org at once would zoom out past readable. */
+  centerOnOrgTop(bottomInset: number, maxZoom: number) {
+    const m = this.m;
+    let x0 = 1e9,
+      y0 = 1e9,
+      x1 = -1e9,
+      y1 = -1e9;
+    const add = (a: number, b: number, c: number, d: number) => {
+      x0 = Math.min(x0, a);
+      y0 = Math.min(y0, b);
+      x1 = Math.max(x1, c);
+      y1 = Math.max(y1, d);
+    };
+    const pip = m.sups.pip;
+    add(pip.x - 60, pip.y - 60, pip.x + 60, pip.y + 70);
+    const firstMgrId = Object.keys(m.sups).find((id) => id !== 'pip');
+    if (firstMgrId) {
+      const mgr = m.sups[firstMgrId];
+      add(mgr.x - 60, mgr.y - 60, mgr.x + 60, mgr.y + 70);
+      m.teams
+        .filter((T) => T.boss === firstMgrId && T.state !== 'hidden')
+        .forEach((T) => {
+          const n = this.members(T).length,
+            w = roomW(n),
+            h = roomH(n);
+          add(T.x - w / 2, T.y - h / 2 - 30, T.x + w / 2, T.y + h / 2);
+        });
+    }
     const vw = window.innerWidth,
       vh = window.innerHeight;
     const topInset = 74;
