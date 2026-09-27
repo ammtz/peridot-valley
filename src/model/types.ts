@@ -63,9 +63,11 @@ export interface Need {
   ok?: string;
   agent?: string;
   kind?: 'blocked' | 'fear';
+  /** Set by `act(nd,'skip')` — hidden from PIP's list until this time. */
+  snoozeUntil?: number;
 }
 
-export type FeedKind = 'DONE' | 'MOVED' | 'ORG' | 'EQUIP' | 'LIVE' | 'YOU' | 'STUCK' | 'ASKS' | 'RECAP';
+export type FeedKind = 'DONE' | 'MOVED' | 'ORG' | 'EQUIP' | 'LIVE' | 'YOU' | 'STUCK' | 'ASKS' | 'RECAP' | 'HANDLED' | 'VIC';
 
 export interface FeedCard {
   id: string;
@@ -85,6 +87,7 @@ export interface WorldModel {
   needs: Need[];
   feed: FeedCard[];
   onboarded?: boolean;
+  storyDone?: boolean;
 }
 
 export interface Sel {

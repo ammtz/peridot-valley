@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import type { Sim } from '../model/sim';
 import { roomH, roomW } from '../model/seed';
 
@@ -16,13 +17,14 @@ const card: React.CSSProperties = {
 };
 const nextBtn: React.CSSProperties = {
   marginTop: 14,
-  padding: '10px 16px',
+  minHeight: 44,
+  padding: '0 18px',
   borderRadius: 9,
   border: '2px solid #15140f',
   background: '#15140f',
   color: '#f4f3ee',
   fontWeight: 800,
-  fontSize: 11.5,
+  fontSize: 13,
   letterSpacing: '.06em',
   cursor: 'pointer',
   fontFamily: "'JetBrains Mono',monospace",
@@ -30,9 +32,6 @@ const nextBtn: React.CSSProperties = {
 
 const PAD = 12;
 
-function fromScreenRect(r: DOMRect): { l: number; t: number; w: number; h: number } {
-  return { l: r.left - PAD, t: r.top - PAD, w: r.width + PAD * 2, h: r.height + PAD * 2 };
-}
 function fromWorldBox(sim: Sim, x0: number, y0: number, x1: number, y1: number) {
   const a = { x: sim.pan.x + x0 * sim.zoom, y: sim.pan.y + y0 * sim.zoom };
   const b = { x: sim.pan.x + x1 * sim.zoom, y: sim.pan.y + y1 * sim.zoom };
@@ -61,32 +60,48 @@ function spotRect(sim: Sim): { l: number; t: number; w: number; h: number } {
     return fromWorldBox(sim, x0, y0, x1, y1);
   }
 
-  if (sim.tourStep === 1) {
-    // The stuck agent's floor — the sim already re-centered the camera on it.
-    const id = sim.tourBlockedAgentId;
-    const a = id ? sim.agent(id) : null;
-    const T = a ? sim.team(a.team) : null;
-    if (!T) return fallback;
-    const n = sim.members(T).length,
-      w = roomW(n),
-      h = roomH(n);
-    return fromWorldBox(sim, T.x - w / 2, T.y - h / 2 - 30, T.x + w / 2, T.y + h / 2);
-  }
-
-  if (sim.tourStep === 3) {
-    const el = document.querySelector('[data-dock-kind="rec"]');
-    if (el) return fromScreenRect(el.getBoundingClientRect());
-    return fallback;
-  }
-
-  // stop 2: the whole dock
-  const el = document.getElementById('dock-panel');
-  if (el) return fromScreenRect(el.getBoundingClientRect());
-  return fallback;
+  // stop 1: the stuck agent's floor — the sim already re-centered the camera on it.
+  // U14: this is the tour's last stop; tools and the recorder are taught by the
+  // phone "+" sheet's one-time tips instead of a third and fourth stop here.
+  const id = sim.tourBlockedAgentId;
+  const a = id ? sim.agent(id) : null;
+  const T = a ? sim.team(a.team) : null;
+  if (!T) return fallback;
+  const n = sim.members(T).length,
+    w = roomW(n),
+    h = roomH(n);
+  return fromWorldBox(sim, T.x - w / 2, T.y - h / 2 - 30, T.x + w / 2, T.y + h / 2);
 }
 
 export function Tour({ sim }: { sim: Sim }) {
-  if (!sim.tourOn) return null;
+  // U8: tourEnd() sets the closing line right as tourOn goes false, so without this
+  // it never gets a render to show in. Keep it up for 5s, or until tapped.
+  const [showOutro, setShowOutro] = useState(false);
+  const wasOn = useRef(sim.tourOn);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (wasOn.current && !sim.tourOn) {
+      setShowOutro(true);
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => setShowOutro(false), 5000);
+    }
+    wasOn.current = sim.tourOn;
+  }, [sim.tourOn]);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  if (!sim.tourOn && !showOutro) return null;
+
+  if (!sim.tourOn) {
+    // Outro only: no spotlight, no NEXT/skip — just PIP's line, dismissible by a tap.
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 900, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 'max(28px,3vh)', pointerEvents: 'none' }}>
+        <div style={{ ...card, marginBottom: 30 }} onClick={() => setShowOutro(false)}>
+          <div style={{ whiteSpace: 'pre-line' }}>{sim.speechText}</div>
+        </div>
+      </div>
+    );
+  }
+
   const shown = sim.speechShown();
   const done = sim.speechDone();
   const rect = spotRect(sim);
@@ -106,7 +121,7 @@ export function Tour({ sim }: { sim: Sim }) {
         }}
       />
       <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 'max(28px,3vh)', pointerEvents: 'none' }}>
-        <div style={{ ...card, marginBottom: sim.tourStep >= 2 ? 130 : 30 }} onClick={tap}>
+        <div style={{ ...card, marginBottom: 30 }} onClick={tap}>
           <div style={{ whiteSpace: 'pre-line' }}>{shown}</div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 14 }}>
             {canNext && (
@@ -116,7 +131,10 @@ export function Tour({ sim }: { sim: Sim }) {
             )}
             <button
               onClick={() => sim.tourSkip()}
-              style={{ pointerEvents: 'auto', background: 'transparent', border: 'none', fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, fontWeight: 600, color: '#9a988f', letterSpacing: '.03em', cursor: 'pointer', textDecoration: 'underline' }}
+              style={{
+                pointerEvents: 'auto', background: 'transparent', border: 'none', minHeight: 44, minWidth: 44, padding: '0 10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, fontWeight: 600, color: '#6b6a62', letterSpacing: '.03em', cursor: 'pointer', textDecoration: 'underline',
+              }}
             >
               skip tour
             </button>

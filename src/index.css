@@ -22,3 +22,14 @@ button,
 input {
   font-family: inherit;
 }
+
+/* Vic onboarding (2026-09-27): wake hint pulses; notes and the thinking dots fade in. */
+.wake-hint { animation: wakePulse 1.8s ease-in-out infinite; }
+@keyframes wakePulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(21, 20, 15, 0.25); } 50% { box-shadow: 0 0 0 10px rgba(21, 20, 15, 0); } }
+.vic-note { animation: noteIn 0.4s ease-out both; }
+@keyframes noteIn { from { opacity: 0; transform: translateX(-6px); } }
+.vic-thinking span { animation: dot 1.2s infinite; opacity: 0.2; }
+.vic-thinking span:nth-child(2) { animation-delay: 0.2s; }
+.vic-thinking span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dot { 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .wake-hint, .vic-note, .vic-thinking span { animation: none; opacity: 1; } }

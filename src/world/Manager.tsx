@@ -8,7 +8,19 @@ export function Manager({ s }: { s: any }) {
           border: `2px ${s.haloStyle} rgba(21,20,15,${s.haloOp})`, background: s.haloBg, transform: `scale(${s.hs})`, pointerEvents: 'none',
         }}
       />
-      <div onPointerDown={s.down} style={{ position: 'absolute', left: s.bl, top: s.bt, width: s.size, height: s.size, cursor: 'grab', transform: `scale(${s.sc})` }}>
+      <div
+        onPointerDown={s.down}
+        role="button"
+        tabIndex={0}
+        aria-label={s.ariaLabel}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            s.activate();
+          }
+        }}
+        style={{ position: 'absolute', left: s.bl, top: s.bt, width: s.size, height: s.size, cursor: 'grab', transform: `scale(${s.sc})` }}
+      >
         <div style={{ position: 'absolute', left: s.ear1L, top: s.earT, width: s.earW, height: s.earH, background: '#15140f', borderRadius: '5px 5px 0 0', transform: 'rotate(-6deg)' }} />
         <div style={{ position: 'absolute', left: s.ear2L, top: s.earT, width: s.earW, height: s.earH, background: '#15140f', borderRadius: '5px 5px 0 0', transform: 'rotate(6deg)' }} />
         <div style={{ position: 'absolute', inset: 0, background: '#15140f', borderRadius: s.rad, boxShadow: '0 5px 0 rgba(21,20,15,.16)' }} />
@@ -20,7 +32,9 @@ export function Manager({ s }: { s: any }) {
           </div>
         )}
       </div>
-      <div style={{ position: 'absolute', left: 0, top: s.labT, transform: 'translateX(-50%)', textAlign: 'center', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
+      {/* V3/V6: a background behind the name/role so the reporting line (and anything
+          else) never reads as cutting through the text. */}
+      <div style={{ position: 'absolute', left: 0, top: s.labT, transform: 'translateX(-50%)', textAlign: 'center', whiteSpace: 'nowrap', pointerEvents: 'none', background: '#f4f3ee', padding: '1px 7px', borderRadius: 5 }}>
         <div style={{ fontWeight: 800, fontSize: s.nameSize, letterSpacing: '.14em' }}>{s.name}</div>
         <div style={{ fontWeight: 600, fontSize: 9.5, letterSpacing: '.1em', color: '#6b6a62', marginTop: 2 }}>{s.role}</div>
       </div>

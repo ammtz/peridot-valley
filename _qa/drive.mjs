@@ -1,8 +1,31 @@
-// Drive the built app through Edge's DevTools protocol: the opening (wake, three
+// Drive the built app through Edge's DevTools protocol: the opening (wake, two
 // questions, hire everyone, tour with the fix, end), then the pre-existing
-// re-org/persistence regression checks via the "skip" path. Desktop + phone.
+// re-org/persistence regression checks, the scripted first-minute story and the
+// "PIP asks less" cap, via the "skip" path. Desktop + phone.
 import { spawn } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+// U12: one vocabulary for moods — grep the source itself for the retired words,
+// since the sim only ever names them in comments/types once fixed, never in copy.
+function grepSrcFor(words) {
+  const root = fileURLToPath(new URL('../src', import.meta.url));
+  const hits = [];
+  const walk = (dir) => {
+    for (const name of readdirSync(dir, { withFileTypes: true })) {
+      const p = dir + '/' + name.name;
+      if (name.isDirectory()) walk(p);
+      else if (/\.(ts|tsx)$/.test(name.name)) {
+        const text = readFileSync(p, 'utf8');
+        for (const w of words) if (text.includes(w)) hits.push(p + ':' + w);
+      }
+    }
+  };
+  walk(root);
+  return hits;
+}
+const u12Hits = grepSrcFor(['FRUSTRATED', 'STALLED', 'OVERWHELMED']);
+console.log('U12 no FRUSTRATED/STALLED/OVERWHELMED in src:', u12Hits.length === 0, u12Hits.length ? JSON.stringify(u12Hits) : '');
 
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const URL_ = process.argv[2] || 'http://localhost:4180/';
@@ -33,7 +56,30 @@ async function drag(x0, y0, x1, y1) {
 }
 async function tap(x, y) { await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y); await sleep(500); }
 const feedText = () => js('document.body.innerText');
+// Poll until a condition holds (or give up after timeoutMs) -- avoids fixed sleeps
+// racing the typewriter under headless-browser load.
+async function waitFor(exprFn, timeoutMs = 4000, stepMs = 100) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    if (await js(exprFn)) return true;
+    await sleep(stepMs);
+  }
+  return false;
+}
 const clickByText = (name) => js(`(()=>{const el=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(name)});if(!el)return false;el.click();return true;})()`);
+const clickByPartial = (needle) => js(`(()=>{const el=[...document.querySelectorAll('button')].find(b=>b.textContent.includes(${JSON.stringify(needle)}));if(!el)return false;el.click();return true;})()`);
+// U11: every visible button/link is at least 44x44.
+const tinyHitTargets = () => js(`(()=>{
+  const bad = [...document.querySelectorAll('button,a')].filter((el) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && (r.width < 44 || r.height < 44);
+  }).map((el) => ({ tag: el.tagName, text: el.textContent.trim().slice(0, 24), w: Math.round(el.getBoundingClientRect().width), h: Math.round(el.getBoundingClientRect().height) }));
+  return bad;
+})()`);
+const checkHitTargets = async (label) => {
+  const bad = await tinyHitTargets();
+  console.log('U11 ' + label + ' -- no button/link under 44x44:', bad.length === 0, bad.length ? JSON.stringify(bad) : '');
+};
 const rectOfButton = (name) => js(`(()=>{const el=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(name)});if(!el)return null;const r=el.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];})()`);
 
 await cdp('Runtime.enable'); await cdp('Page.enable');
@@ -43,29 +89,40 @@ await cdp('Page.navigate', { url: URL_ }); await sleep(2500);
 await js("localStorage.removeItem('the-system-live-v4'); location.reload()"); await sleep(2500);
 
 console.log('=== opening walk (' + TAG + ') ===');
-console.log('starts on wake screen:', (await feedText()).includes('tap to wake'));
+console.log('starts on wake screen:', (await feedText()).includes('Tap to wake Vic'));
 await shot('o1-wake');
 
 await js('window.__sim.wake()');
-await sleep(3000); // let the greeting type out
-await js('window.__sim.advanceGreet()');
-await sleep(3000); // let "Who is this for?" type out
+await waitFor('window.__sim.speechDone()'); // let the greeting type out, however long that takes
+await sleep(200);
+// U10: the greeting ends with a real "Let's go" button, not tap-anywhere.
+console.log('U10 "Let\'s go" button present:', !!(await rectOfButton("Let's go")));
+const wentOk = await clickByText("Let's go");
+if (!wentOk) await js('window.__sim.advanceGreet()');
+await sleep(3500); // let the approvals question type out
 await shot('o2-q1');
-console.log('q1 asked:', (await js('window.__sim.speechText')) === 'Who is this for?');
+console.log('q1 asked:', (await js('window.__sim.speechText')) === 'Should my staff consult you directly for approvals, or shall I handle those decisions for you?');
+await checkHitTargets('q1 answer buttons');
 // Real tap on the Q1 answer button, to prove it is actually hittable.
-const meRect = await rectOfButton('My work');
-console.log('found "My work" button:', !!meRect);
-if (meRect) await tap(meRect[0], meRect[1]);
-else await js("window.__sim.answerQ1('work')");
-await sleep(300);
-
+const askRect = await rectOfButton('You handle them');
+console.log('found "You handle them" button:', !!askRect);
+if (askRect) await tap(askRect[0], askRect[1]);
+else await js('window.__sim.answerQ1(false)');
+await sleep(1500);
+console.log('Vic thinks between questions (no answer buttons yet):', (await js('window.__sim.thinking')) === true && !(await rectOfButton('Job hunt')));
+await shot('o2b-thinking');
+await sleep(1600);
 await js('window.__sim.finishSpeech()');
-await js('window.__sim.answerQ2(true)'); await sleep(200);
+console.log('q2 asked:', (await js('window.__sim.speechText')) === 'Which part of your day shall I take off your hands first?');
+console.log("Vic's notes record the answer:", (await feedText()).includes("VIC'S NOTES"));
+await js("window.__sim.answerQ2('job')");
+await sleep(2000);
 await js('window.__sim.finishSpeech()');
-await js("window.__sim.answerQ3('everything')");
-await sleep(3000); // let the first hire card's line type out
+await sleep(1500);
+console.log('hire card shows a blueprint:', (await feedText()).includes('BLUEPRINT')); // let the first hire card's line type out
 await shot('o3-hire-card');
 console.log('hire queue length:', await js('window.__sim.hireQueue.length'));
+await checkHitTargets('hire card buttons');
 
 let hired = 0;
 for (let guard = 0; guard < 6; guard++) {
@@ -90,60 +147,216 @@ await js(`(()=>{
 })()`);
 await sleep(300);
 console.log('stop1 cleared after the fix:', !(await js('window.__sim.tourWaiting')));
+console.log('U3 sel cleared after stop1 fix (popup does not cover the tour):', await js('window.__sim.sel === null'));
 
-await js('window.__sim.tourNext()');
-await sleep(3000);
-console.log('dock visible at stop2:', (await feedText()).includes('MCP'));
-await shot('o6-tour-stop2');
-await js("window.__sim.placeFurn('mcp', 400, 500)");
-console.log('tool-placed flag set:', await js('window.__sim.tourToolPlaced'));
-
-await js('window.__sim.tourNext()');
-await sleep(3000);
-await shot('o7-tour-stop3');
-await js("window.__sim.placeFurn('rec', 420, 560)");
-console.log('recorder-placed flag set:', await js('window.__sim.tourRecPlaced'));
-
+// U14: the tour is two stops now -- NEXT at stop 1 ends it directly, no tools/recorder stops.
 await js('window.__sim.tourNext()');
 await sleep(1000);
 console.log('onboarded after tour end:', await js('window.__sim.m.onboarded'));
 console.log('tourOn after end:', await js('window.__sim.tourOn'));
-console.log('dock + feed present at end:', (await feedText()).includes('MCP') && (await feedText()).includes('PIP'));
+await shot('o6-tour-end');
+await checkHitTargets('post-tour chrome (dock/zoom/pill/feed)');
+// U8: the closing line stays up for a few seconds after tourOn goes false.
+console.log('U8 outro line still shown right after tourOn=false:', (await feedText()).includes("It's yours now"));
+await sleep(5200);
+console.log('U8 outro line gone after ~5s:', !(await feedText()).includes("It's yours now"));
+
+// U2/U14: the dock only shows post-tour now; on phone it is the "+" button and its
+// sheet carries one-time tips for tools and the recorder (no tour stop teaches them).
+console.log('dock present at end:', MOBILE ? await js("!!document.getElementById('phone-add-btn')") : (await feedText()).includes('TOOLS'));
+console.log('feed present at end:', (await feedText()).includes('VIC'));
+if (MOBILE) {
+  await js('window.__sim.openPhoneAdd()'); await sleep(300);
+  console.log('U14 tools tip shown on first + sheet open:', (await feedText()).includes('drop it near the team'));
+  console.log('U14 recorder tip shown on first + sheet open:', (await feedText()).includes('Watches a team'));
+  await js("window.__sim.placeFurnFromSheet('mcp')"); await sleep(300);
+  console.log('tool placed from the + sheet:', await js("window.__sim.m.furn.some(f=>f.type==='mcp')"));
+  await js('window.__sim.openPhoneAdd()'); await sleep(300);
+  console.log('U14 tips do not repeat on a second + sheet open:', !(await feedText()).includes('drop it near the team'));
+  await js('window.__sim.closePhoneAdd()'); await sleep(200);
+}
 await shot('o8-end');
 const savedOnboarded = await js("JSON.parse(localStorage.getItem('the-system-live-v4')||'null')?.onboarded");
 console.log('onboarded persisted to storage:', savedOnboarded);
 
+// U15/T6: accessibility -- close buttons, keyboard-reachable world nodes, aria-live feed.
+// The feed panel itself (not just its closed pill) is what carries aria-live, so open it first.
+await js('window.__sim.showFeed = true; window.__sim.notify();'); await sleep(200);
+const a11y = await js(`(()=>{
+  const closeBtns = [...document.querySelectorAll('button')].filter(b => b.textContent.trim() === '×');
+  const worldButtons = document.querySelectorAll('[role="button"][tabindex="0"]');
+  return {
+    closeBtnsHaveLabel: closeBtns.length > 0 && closeBtns.every(b => b.getAttribute('aria-label') === 'Close'),
+    worldButtonCount: worldButtons.length,
+    worldButtonsHaveLabel: worldButtons.length > 0 && [...worldButtons].every(b => !!b.getAttribute('aria-label')),
+    feedAriaLive: !!document.querySelector('[aria-live="polite"]'),
+  };
+})()`);
+console.log('U15/T6 close/aria-label/aria-live present:', a11y.closeBtnsHaveLabel && a11y.worldButtonCount > 0 && a11y.worldButtonsHaveLabel && a11y.feedAriaLive, JSON.stringify(a11y));
+
+// Enter on a keyboard-focused world node (PIP) opens its popup, same as a tap.
+const kbOpened = await js(`(()=>{
+  const pip = [...document.querySelectorAll('[role="button"][tabindex="0"]')].find(el => el.getAttribute('aria-label')?.startsWith('VIC,'));
+  if (!pip) return false;
+  pip.focus();
+  pip.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  return true;
+})()`);
+await sleep(300);
+console.log('U15/T6 Enter on PIP opens its popup:', kbOpened && (await feedText()).includes('NEEDS YOU'));
+await js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))"); await sleep(300);
+
+// prefers-reduced-motion: speech shows instantly, bob/pulse/aura stop (checked via sim state).
+await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+await sleep(200);
+console.log('reducedMotion detected:', await js('window.__sim.reducedMotion'));
+await js("window.__sim.setSpeech('This should appear all at once, not typed out letter by letter.')");
+const instant = await js('window.__sim.speechShown() === window.__sim.speechText');
+console.log('U15/T6 reduced motion shows speech instantly:', instant);
+await cdp('Emulation.setEmulatedMedia', { features: [] });
+
 if (!MOBILE) {
   await js('location.reload()'); await sleep(2500);
-  console.log('returning visitor skips the opening:', !(await feedText()).includes('tap to wake'));
+  console.log('returning visitor skips the opening:', !(await feedText()).includes('Tap to wake Vic'));
   const fps = await js('new Promise(r=>{let n=0;const t0=performance.now();(function f(){n++;performance.now()-t0<2000?requestAnimationFrame(f):r(Math.round(n/2))})()})');
   console.log('fps', fps);
 
-  // --- Regression: "skip" still loads the untouched seed world. ---
+  // T4: renderTicks (one per notify()) over an idle 5s should be well under 300 --
+  // requestAnimationFrame still runs every frame (fps above is unaffected), but a
+  // full-tree re-render no longer follows every one of them.
+  const ticksBefore = await js('window.__sim.renderTicks');
+  await sleep(5000);
+  const ticksAfter = await js('window.__sim.renderTicks');
+  console.log('T4 render ticks over idle 5s well under 300:', ticksAfter - ticksBefore < 300, ticksAfter - ticksBefore);
+
+  // --- Regression: "skip" still loads the full valley, and runs the scripted story. ---
   await js("localStorage.removeItem('the-system-live-v4'); location.reload()"); await sleep(2500);
   await js('window.__sim.skipIntro()'); await sleep(500);
-  console.log('skip loads the original seed agent count:', await js('window.__sim.m.agents.length'));
-  await tap(574, 120); await shot('t1-pip-popup');
+  console.log('skip loads the full valley agent count (12):', await js('window.__sim.m.agents.length'));
+  // U5: the primary-action pill reads the live needs count and its tap opens PIP's sheet.
+  console.log('U5 pill reads needs count:', /things? need you|All clear/.test(await feedText()));
+  await clickByPartial('need you'); await sleep(400); await shot('t1-pip-popup');
   console.log('PIP popup shows NEEDS YOU:', (await feedText()).includes('NEEDS YOU'));
+  await checkHitTargets('PIP popup (needs + acts buttons)');
   await js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))"); await sleep(300);
+
+  // U13: open asks pinned at the top of the feed, ahead of the regular cards.
+  await js('window.__sim.showFeed = true; window.__sim.notify();'); await sleep(300);
+  await shot('t0-feed-quieter');
+  const feedInfo = await js(`(()=>{
+    const kids = [...document.querySelectorAll('[data-pinned-ask],[data-feed-card],[data-done-fold]')];
+    const firstNonAskIdx = kids.findIndex(k => !k.hasAttribute('data-pinned-ask'));
+    const asksFirst = firstNonAskIdx === -1 || kids.slice(0, firstNonAskIdx).length === document.querySelectorAll('[data-pinned-ask]').length;
+    return {
+      pinnedAsks: document.querySelectorAll('[data-pinned-ask]').length,
+      visibleNeeds: window.__sim.visibleNeeds().length,
+      doneRowsShown: document.querySelectorAll('[data-feed-card="DONE"]').length,
+      asksFirst,
+    };
+  })()`);
+  console.log('U13 asks pinned first, at most 1 DONE row:', feedInfo.pinnedAsks === feedInfo.visibleNeeds && feedInfo.doneRowsShown <= 1 && feedInfo.asksFirst, JSON.stringify(feedInfo));
+
+  // The scripted first minute: wait for BILLS to get stuck, fix it, check the recap.
+  await sleep(16000);
+  console.log('story flagged BILLS stuck:', await js("!!(window.__sim.agent('money-bills') && window.__sim.agent('money-bills').blocked)"));
+  await shot('o9-story-stuck');
+  await js("(()=>{const sim=window.__sim,a=sim.agent('money-bills'); if(a) sim.unblock(a);})()");
+  await sleep(500);
+  console.log('story recap posted after the fix:', (await feedText()).includes('Morning recap'));
+  await shot('o10-story-recap');
+
+  // PIP asks less: after 60s of running, at most 3 asks, never two with the same text.
+  await sleep(60000);
+  const needsInfo = await js("(()=>{const n=window.__sim.m.needs;const texts=n.map((x)=>x.text);return {count:n.length,unique:new Set(texts).size};})()");
+  console.log('at most 3 asks after 60s:', needsInfo.count <= 3 && needsInfo.unique === needsInfo.count, JSON.stringify(needsInfo));
+
+  // U7: an idle valley stays healthy -- most agents are working or in flow, not sitting bored.
+  const moodInfo = await js(`(()=>{
+    const sim = window.__sim, t = performance.now()/1000;
+    const live = sim.m.agents.filter(a => sim.team(a.team) && sim.team(a.team).state==='active');
+    const healthy = live.filter(a => { const md = sim.mood(a, t); return md === 'working' || md === 'flow'; });
+    return { total: live.length, healthy: healthy.length, pct: healthy.length / live.length };
+  })()`);
+  console.log('U7 >=60% working or in flow:', moodInfo.pct >= 0.6, JSON.stringify(moodInfo));
+
   const at = (name, dy = 0) => js(`(()=>{const el=[...document.querySelectorAll('div,span')].filter(e=>e.textContent.trim().startsWith(${JSON.stringify(name)})).sort((x,y)=>x.textContent.length-y.textContent.length)[0];if(!el)return null;const r=el.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2+${dy}]})()`);
-  const g = await at('GROCERY', 40), a = await at('ADA', -30);
-  await drag(g[0], g[1], a[0], a[1]); await shot('t2-grocery-to-ada');
-  console.log('ORG card after dropping GROCERY on ADA:', /ORG/.test(await feedText()));
+  const g = await at('JOB HUNT', 40), a = await at('OTTO', -30);
+  await drag(g[0], g[1], a[0], a[1]); await shot('t2-jobhunt-to-otto');
+  console.log('ORG card after dropping JOB HUNT on OTTO:', /ORG/.test(await feedText()));
   await sleep(1200);
   await js('location.reload()'); await sleep(2500);
   await clickByText('RESET'); await sleep(400);
   console.log('reset confirm shown:', (await feedText()).includes('Start over?'));
   await clickByText('YES, FROM SCRATCH'); await sleep(600);
   const after = await js("JSON.parse(localStorage.getItem('the-system-live-v4')||'null')");
-  console.log('after RESET, storage empty:', after === null, '| back on wake screen:', (await feedText()).includes('tap to wake'));
+  console.log('after RESET, storage empty:', after === null, '| back on wake screen:', (await feedText()).includes('Tap to wake Vic'));
+
+  // T5: a v3 save (no snoozeUntil key at all, the shape the live site still writes)
+  // must load without throwing, and migrate() should bring it up to v4 on save.
+  const migrateInfo = await js(`(()=>{
+    const v3 = {
+      v: 3,
+      sups: { pip: { id: 'pip', name: 'VIC', role: 'CHIEF OF STUFF', x: 540, y: 200, size: 58, boss: null } },
+      teams: [], agents: [], furn: [],
+      needs: [{ id: 'n1', team: 'money', text: 'old-shape need', acts: [['GO AHEAD','ack']] }],
+      feed: [], onboarded: true,
+    };
+    localStorage.setItem('the-system-live-v4', JSON.stringify(v3));
+    return true;
+  })()`);
+  await js('location.reload()'); await sleep(2500);
+  const migrated = await js("(()=>{const sim=window.__sim; return { threw: false, v: sim.m.v, hasSnoozeKey: 'snoozeUntil' in sim.m.needs[0] };})()");
+  console.log('T5 v3 save loads without throwing and migrates to v4:', migrateInfo && migrated.v === 4 && migrated.hasSnoozeKey, JSON.stringify(migrated));
+  await js("window.__sim.save()");
+  const savedV = await js("JSON.parse(localStorage.getItem('the-system-live-v4')||'null')?.v");
+  console.log('T5 next save() persists v4:', savedV === 4, savedV);
+  await js("localStorage.removeItem('the-system-live-v4')");
 } else {
   await shot('p1-phone');
+  // U2: -/%/+ zoom buttons are gone on phone (pinch works instead) -- read zoom straight off the sim.
   const t = (type, pts) => cdp('Input.dispatchTouchEvent', { type, touchPoints: pts });
   await t('touchStart', [{ x: 150, y: 400, id: 1 }, { x: 240, y: 400, id: 2 }]);
   for (let i = 1; i <= 8; i++) { await t('touchMove', [{ x: 150 - i * 12, y: 400, id: 1 }, { x: 240 + i * 12, y: 400, id: 2 }]); await sleep(30); }
   await t('touchEnd', []); await sleep(400);
-  console.log('zoom label after pinch:', (await feedText()).match(/\d+%/)?.[0]);
+  console.log('zoom after pinch:', await js('window.__sim.zoom'));
+
+  // Phone: popups/feed open as a bottom sheet, no taller than ~55% of the viewport, town visible above.
+  await js("window.__sim.select({kind:'sup', id:'pip'})"); await sleep(500);
+  const sheetRatio = await js("(()=>{const el=document.querySelector('[data-bottom-sheet]');if(!el)return null;const r=el.getBoundingClientRect();return r.height/window.innerHeight;})()");
+  console.log('phone bottom sheet height <= 60% of viewport:', sheetRatio != null && sheetRatio <= 0.6, sheetRatio);
+  await shot('p2-phone-sheet');
+  await js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))"); await sleep(300);
+
+  // U1: a fresh phone skip opens at a readable zoom, never a squint.
+  await js("localStorage.removeItem('the-system-live-v4'); location.reload()"); await sleep(2500);
+  await js('window.__sim.skipIntro()'); await sleep(500);
+  console.log('U1 phone skip zoom >= 0.7:', await js('window.__sim.zoom >= 0.7'));
+  await shot('p3-phone-skip-zoom');
+
+  // U2: with nothing open, the old chrome (live-line, TOOLS grid) is gone and the new
+  // chrome (the ? chip, FIT, the + button, the needs pill, the feed pill) is present,
+  // and no bottom sheet is covering the world.
+  const chrome = await js(`(()=>({
+    moodChip: !!document.querySelector('[aria-label="Legend and reset"]'),
+    fitBtn: !!document.querySelector('[aria-label="Fit view"]'),
+    addBtn: !!document.getElementById('phone-add-btn'),
+    feedPill: document.body.innerText.includes('VIC → YOU'),
+    needsPill: /things? need you|All clear/.test(document.body.innerText),
+    liveLineGone: !document.body.innerText.includes('live ·'),
+    dockGridGone: !document.getElementById('dock-panel'),
+    noSheetOpen: !document.querySelector('[data-bottom-sheet]'),
+  }))()`);
+  console.log('U2 phone chrome recedes to ?/FIT/+/pills, no sheet by default:', JSON.stringify(chrome));
+  await shot('p4-phone-chrome');
+  await checkHitTargets('phone default chrome (?/FIT/+/pills)');
+
+  await js('window.__sim.openPhoneMood()'); await sleep(300);
+  await checkHitTargets('phone mood sheet');
+  await js('window.__sim.closePhoneMood()'); await sleep(200);
+
+  await js('window.__sim.openPhoneAdd()'); await sleep(300);
+  await checkHitTargets('phone + sheet (with tips)');
+  await js('window.__sim.closePhoneAdd()'); await sleep(200);
 }
 console.log('errors:', errors.length ? errors : 'none');
 ws.close(); edge.kill();

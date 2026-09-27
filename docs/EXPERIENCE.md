@@ -16,39 +16,41 @@ Tap → PIP opens its eyes, bobs, and speaks in a speech card under it, typed ou
 at about 40 characters a second (tap to finish the line instantly):
 
 > Hi. I'm PIP. I run a team of helpers so you don't have to watch them.
-> Three questions, and I'll hire your first team.
+> Two questions, and I'll hire your first team.
+
+**Revised 2026-09-26, Andres: "less is more."** Down from three questions and
+eight presets to two questions and four use cases — see the note at the end of
+this section.
 
 A small text link bottom-center the whole time: `skip — show me a full valley`,
 which loads the existing seed world exactly as it is today and ends the intro.
 
-## 2. Three questions (the decision tree)
+## 2. Two questions (the decision tree)
 
 Asked one at a time in the speech card, with big answer buttons under it
 (full-width on a phone, thumb-sized).
 
-1. **Who is this for?** → `Me` · `My work`
-2. **Should they check with you before anything important?** →
+1. **Should they check with you before anything important?** →
    `Yes, ask me first` · `No, just handle it`
-3. If `Me`: **What's on your mind most?** → `Money` · `Home & family` ·
-   `Health & habits` · `A bit of everything`
-   If `My work`: **What eats your week?** → `Customers & sales` ·
-   `Building the product` · `Admin & operations` · `A bit of everything`
+2. **What should your helpers take off your plate first?** → `Job hunt` ·
+   `Inbox & calendar` · `Money & bills` · `Home & family`
 
-Q3 picks the preset (8 presets, in `src/model/presets.ts`, plain data). Q2 is a
+Q2 picks the preset (4 presets, in `src/model/presets.ts`, plain data). Q1 is a
 modifier:
 
 - `Yes, ask me first` → the fear roll is doubled (more UNSURE agents asking for
-  your OK) and a CONTEXT shelf with **Ask before acting** switched on is placed
-  beside the first team.
-- `No, just handle it` → the fear roll is halved and agents reach flow a little
-  more often.
+  your OK) and a NOTES shelf with **Ask before acting** switched on is placed
+  beside the first team. Asks are never auto-resolved.
+- `No, just handle it` → the fear roll is halved, agents reach flow a little
+  more often, and PIP resolves most asks itself — a HANDLED feed card instead
+  of an interruption.
 
-Each preset: PIP plus **1–2 managers and 2–4 teams, 7–12 agents**. The four
-personal presets reuse the seed's teams and copy (FINANCE, MARKETS, SCHEDULE,
-FAMILY, PETS, INSURANCE, GROCERY, TAXES). The four work presets need new teams
-(e.g. LEADS, SUPPORT, BUILD, QA, INBOX, BOOKS, HIRING); write their task pools,
-BLOCKERS and FEARS in the same voice as the seed: short, concrete, a little
-human. "A bit of everything" is the fullest one.
+Each of the 4 answers hires **one manager running one team of 3 helpers** —
+JOB HUNT (SCOUT, FIT, PEN), INBOX (SORT, REPLY, CAL), MONEY (BILLS, SUBS,
+WATCH), or HOME (KIN, CART, FIX). The full valley (the skip link, or a
+returning visitor with no saved state) hires all four at once, as PIP plus
+DASH (WORK: JOB HUNT, INBOX) and OTTO (HOME & MONEY: MONEY, HOME) — 2
+managers, 4 teams, 12 helpers.
 
 ## 3. The hiring
 
@@ -100,10 +102,13 @@ I'll be up here.` The spotlight lifts and the normal app runs.
 Hover (desktop) or press-and-hold 400 ms (touch) on a dock tile shows a small
 card above it (panel fill, 2px ink border, hard shadow, max 200px):
 
-- **MCP RACK** — Plugs the team into your apps: Gmail, Calendar, Drive, your bank.
-- **DATABASE** — Something to look things up in: receipts, contacts, records.
-- **CONTEXT** — Your rules and preferences, so they act the way you would.
+- **TOOLS** — Plugs the team into your apps: Gmail, Calendar, Drive, your bank.
+- **DATA** — Something to look things up in: receipts, contacts, records.
+- **NOTES** — Your rules and preferences, so they act the way you would.
 - **RECORDER** — Watches a team and sends you a recap on a schedule.
+
+Plain words for normal people, added 2026-09-26: the dock used to read MCP, DB,
+CONTEXT, REC. The internal type keys (`mcp`, `db`, `books`, `rec`) didn't move.
 
 A quick tap still places the tool as today; the tip must not block that.
 
@@ -142,9 +147,16 @@ Remove the STRATEGY BOARD from the dock. Add furniture type `rec`:
 
 - A stranger on a phone can go from `tap to wake` to their own valley, hire,
   rename, add a team, finish the tour, and never need instructions.
-- All eight presets load without errors, and each has a stuck-able agent for
+- All four presets load without errors, and each has a stuck-able agent for
   tour stop 2.
 - The recorder posts real recaps from real sim events.
 - `npm run build` is green; `_qa/drive.mjs` is updated to walk the opening
-  (wake → three answers → hire all → tour with the fix → end) and to check
-  zero console errors, desktop and phone.
+  (wake → two answers → hire → tour with the fix → end) and to check zero
+  console errors, desktop and phone.
+
+**Added 2026-09-26** (Andres's "less is more" pass): PIP shows at most 3 open
+asks, never two with the same text. The full valley plays a once-per-save
+45–60s scripted morning (SCOUT finds postings, BILLS gets stuck on a bank
+login, PIP flags it in 2 seconds, a recap follows the fix) before settling
+into the calmer normal sim. Popups and the feed open as a phone bottom sheet
+(≤55% of the viewport) so the town stays visible above.

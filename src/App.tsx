@@ -1,30 +1,35 @@
 import { useSim } from './store';
 import { World } from './world/World';
 import { FurnitureIcon } from './world/FurnitureIcon';
-import { TitleBar } from './ui/TitleBar';
+import { TitleBar, PhoneMoodSheet } from './ui/TitleBar';
 import { ZoomControls } from './ui/ZoomControls';
 import { Dock } from './ui/Dock';
 import { Feed } from './ui/Feed';
 import { Popup } from './ui/Popup';
 import { Intro } from './ui/Intro';
 import { Tour } from './ui/Tour';
+import { NeedsPill } from './ui/NeedsPill';
 
 export default function App() {
   const sim = useSim();
   const rv = sim.renderVals();
 
   // Chrome stays hidden through the opening and the questions; the tour brings
-  // the feed in at its first stop and the dock + zoom controls at its third.
+  // the feed in at its first stop. U14: the tour is two stops now (org overview,
+  // then the fix) and ends right after, so the dock only ever shows once the
+  // tour is over -- tools and the recorder are taught by the "+" sheet's one-time
+  // tips instead of a third and fourth tour stop.
   const full = !sim.introOn && !sim.tourOn;
-  const showFeed = full || (sim.tourOn && sim.tourStep >= 0);
-  const showDock = full || (sim.tourOn && sim.tourStep >= 2);
+  const showFeed = full || sim.tourOn;
+  const showDock = full;
   const showZoom = full;
   const showTitle = full || sim.tourOn;
 
   return (
     <>
       <World sim={sim} rv={rv} />
-      {showTitle && <TitleBar agentCount={rv.agentCount} mgrCount={rv.mgrCount} />}
+      {showTitle && <TitleBar agentCount={rv.agentCount} mgrCount={rv.mgrCount} rv={rv} />}
+      <PhoneMoodSheet rv={rv} />
       {showZoom && <ZoomControls rv={rv} />}
       {showDock && <Dock rv={rv} />}
       {rv.hasGhost && (
@@ -39,6 +44,7 @@ export default function App() {
         </div>
       )}
       {showFeed && <Feed rv={rv} />}
+      {full && <NeedsPill rv={rv} />}
       <Popup rv={rv} />
       <Intro sim={sim} />
       <Tour sim={sim} />

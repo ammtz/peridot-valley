@@ -1,7 +1,8 @@
 import type { Agent, FeedCard, Furniture, Manager, Mood, Need, NodeKind, Sel, Settings, Team, WorldModel } from './types';
-import { BLOCKERS, DOCK_TIP, FEARS, FR, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic } from './constants';
+import { BLOCKERS, CURRENT_V, DOCK_TIP, FEARS, FR, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic, plural } from './constants';
 import { blank, desks, roomH, roomW, seed } from './seed';
-import { genericAgents, genericTeamPool, helperCount, pickPreset, Q3_PERSONAL, Q3_WORK, type PresetManagerSeed } from './presets';
+import { genericAgents, genericTeamPool, helperCount, pickPreset, Q2_OPTIONS, type PresetManagerSeed } from './presets';
+import { decide, type DecideState } from './decider';
 
 type DragKind = 'pan' | 'team' | 'sup' | 'furn' | 'agent' | 'newfurn' | 'ghost';
 
@@ -49,11 +50,10 @@ export class Sim {
   // --- onboarding: opening, three questions, hiring, tour ---
   freshParam = false;
   introOn = false;
-  introPhase: 'sleep' | 'greet' | 'q1' | 'q2' | 'q3' | 'hiring' | 'addteam' | null = null;
+  introPhase: 'sleep' | 'greet' | 'q1' | 'q2' | 'hiring' | 'addteam' | null = null;
   pipAsleep = false;
   speechText = '';
   speechAt = 0;
-  who: 'me' | 'work' | null = null;
   askFirst = false;
   fearMult = 1;
   hireQueue: PresetManagerSeed[] = [];
@@ -65,13 +65,27 @@ export class Sim {
   addTeamCount = 0;
   addTeamValue = '';
   tourOn = false;
+  // --- the scripted first-minute story, full valley only (see startStory) ---
+  storyOn = false;
+  storyStart = 0;
+  storyScoutDone = false;
+  storyBillsPaidDone = false;
+  storyBillsStuckDone = false;
+  storyRecapDone = false;
   tourStep = 0;
   tourStepStart = 0;
   tourWaiting = false;
   tourBlockedAgentId: string | null = null;
-  tourToolPlaced = false;
-  tourRecPlaced = false;
   resetConfirm = false;
+  // --- phone chrome (U2): the mood legend and the dock collapse into sheets ---
+  phoneMoodOpen = false;
+  phoneAddOpen = false;
+  // U14: the tour no longer teaches tools/the recorder -- each tip shows once,
+  // the first time the phone "+" sheet opens.
+  seenToolsTip = false;
+  seenRecorderTip = false;
+  showAddSheetToolsTip = false;
+  showAddSheetRecorderTip = false;
   evLog: { t: number; team: string; kind: 'done' | 'stuck' | 'fear'; who?: string; text?: string }[] = [];
   pan = { x: 0, y: 0 };
   zoom = 1;
@@ -97,11 +111,27 @@ export class Sim {
   settings: Settings = { simSpeed: 'normal', alwaysShowNames: false, thoughts: 'icons' };
   notify: () => void = () => {};
   raf = 0;
+  /** T4: counts actual notify()/re-render triggers -- exposed for the drive.mjs render-count check. */
+  renderTicks = 0;
+  /** U15/T6: prefers-reduced-motion -- speech shows instantly, bob/pulse/aura stop. */
+  reducedMotion = false;
+  /** FIX1: true once layoutPhoneColumn() has reflowed the org into a scrollable column. */
+  phoneColumnLayout = false;
 
   constructor() {
     if (typeof window !== 'undefined') {
       try {
         this.freshParam = new URLSearchParams(window.location.search).has('fresh');
+      } catch {
+        /* ignore */
+      }
+      try {
+        const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+        this.reducedMotion = mq.matches;
+        mq.addEventListener?.('change', (e) => {
+          this.reducedMotion = e.matches;
+          this.notify();
+        });
       } catch {
         /* ignore */
       }
@@ -133,6 +163,7 @@ export class Sim {
     this.speechAt = NOW();
   }
   speechShown(): string {
+    if (this.reducedMotion) return this.speechText;
     const n = Math.floor((NOW() - this.speechAt) * 40);
     return this.speechText.slice(0, cl(n, 0, this.speechText.length));
   }
@@ -143,18 +174,37 @@ export class Sim {
     this.speechAt = NOW() - this.speechText.length / 40 - 0.05;
   }
 
+  /** Vic's notebook: one line per onboarding answer, shown on the intro card. */
+  vicNotes: string[] = [];
+  /** True while Vic "thinks" between questions; the answer buttons stay hidden. */
+  thinking = false;
+  private thinkTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Pause after an answer, as if Vic were writing it down, then run `next`. */
+  private thinkThen(next: () => void) {
+    this.thinking = true;
+    if (this.thinkTimer) clearTimeout(this.thinkTimer);
+    // Let the acknowledgement finish typing, then hold for a beat with the dots showing.
+    const ms = this.reducedMotion ? 300 : (this.speechText.length / 40) * 1000 + 1300;
+    this.thinkTimer = setTimeout(() => {
+      this.thinking = false;
+      this.thinkTimer = null;
+      next();
+      this.notify();
+    }, ms);
+  }
+
   // --- opening ---
   wake() {
     if (this.introPhase !== 'sleep') return;
     this.pipAsleep = false;
     this.introPhase = 'greet';
-    this.setSpeech("Hi. I'm PIP. I run a team of helpers so you don't have to watch them. Three questions, and I'll hire your first team.");
+    this.setSpeech("Good morning. I'm Vic, your chief of staff. Two questions, and I'll have your first team at work.");
     this.notify();
   }
   advanceGreet() {
     if (this.introPhase !== 'greet') return;
     this.introPhase = 'q1';
-    this.setSpeech('Who is this for?');
+    this.setSpeech('Should my staff consult you directly for approvals, or shall I handle those decisions for you?');
     this.notify();
   }
   skipIntro() {
@@ -164,35 +214,41 @@ export class Sim {
     this.introPhase = null;
     this.tourOn = false;
     this.pipAsleep = false;
+    this.phoneColumnLayout = false;
     this.dirty = true;
+    if (!this.m.storyDone) this.startStory();
     this.save();
-    this.fitView();
+    if (typeof window !== 'undefined' && window.innerWidth < 560) this.centerOnOrgTop(160, 1);
+    else this.fitView();
     this.notify();
   }
-  answerQ1(who: 'me' | 'work') {
-    this.who = who;
-    this.introPhase = 'q2';
-    this.setSpeech('Should they check with you before anything important?');
-    this.notify();
-  }
-  answerQ2(ask: boolean) {
+  answerQ1(ask: boolean) {
     this.askFirst = ask;
     this.pendingContext = ask;
     this.fearMult = ask ? 2 : 0.5;
-    this.introPhase = 'q3';
-    this.setSpeech(this.who === 'me' ? "What's on your mind most?" : 'What eats your week?');
+    this.vicNotes.push(ask ? 'Approvals: you decide' : 'Approvals: Vic decides, tells you after');
+    this.setSpeech(ask ? 'Very good. Approvals will come to you.' : "Understood. I'll decide, and tell you afterwards.");
+    this.thinkThen(() => {
+      this.introPhase = 'q2';
+      this.setSpeech('Which part of your day shall I take off your hands first?');
+    });
     this.notify();
   }
-  q3Options(): [string, string][] {
-    return this.who === 'work' ? Q3_WORK : Q3_PERSONAL;
+  q2Options(): [string, string][] {
+    return Q2_OPTIONS;
   }
-  answerQ3(focusKey: string) {
-    const preset = pickPreset(this.who || 'me', focusKey);
+  answerQ2(focusKey: string) {
+    const preset = pickPreset(focusKey);
     this.hireQueue = preset.managers;
     this.hireIndex = 0;
     this.anyHired = false;
-    this.introPhase = 'hiring';
-    this.setSpeech("Here's who I'd hire.");
+    const label = (Q2_OPTIONS.find(([k]) => k === focusKey) || Q2_OPTIONS[0])[1];
+    this.vicNotes.push('First job: ' + label.toLowerCase());
+    this.setSpeech('Noted. I have a team in mind for that.');
+    this.thinkThen(() => {
+      this.introPhase = 'hiring';
+      this.setSpeech("Here's who I'd hire, and how they'd work.");
+    });
     this.notify();
   }
   currentHire() {
@@ -213,7 +269,9 @@ export class Sim {
         ty = my + 230;
       m.teams.push({ id: ts.id, name: ts.name, boss: mgr.id, x: tx, y: ty, state: 'active', pool: ts.pool.slice(), pi: 0, born: t + j * 0.35 });
       ts.agents.forEach((a) => {
-        m.agents.push({ id: ts.id + '-' + a.n.toLowerCase(), name: a.n, role: a.role, team: ts.id, doing: a.doing, backlog: a.backlog.slice(), done: a.done.slice(), blocked: null, fear: null, ...(a.extra || {}) });
+        const extra = { ...(a.extra || {}) };
+        delete extra.blocked;
+        m.agents.push({ id: ts.id + '-' + a.n.toLowerCase(), name: a.n, role: a.role, team: ts.id, doing: a.doing, backlog: a.backlog.slice(), done: a.done.slice(), blocked: null, fear: null, ...extra });
       });
       if (first && j === 0 && this.pendingContext) {
         m.furn.push({ id: 'ctx' + Date.now().toString(36), type: 'books', x: tx + 90, y: ty + 30, on: [true, false, false, false, false], born: t + 0.4 });
@@ -231,12 +289,20 @@ export class Sim {
     this.renaming = false;
     this.hireIndex++;
     this.afterHireStep();
+    this.fitViewAboveCard();
+  }
+  /** U9: after each hire, frame the new floors in the space above the intro card. */
+  fitViewAboveCard() {
+    if (typeof document === 'undefined') return;
+    const el = document.querySelector('[data-intro-card]');
+    const cardHeight = el ? el.getBoundingClientRect().height : 180;
+    this.fitView(cardHeight + 40, 1.1);
   }
   skipCurrent() {
     this.hireIndex++;
     this.renaming = false;
     if (this.hireIndex >= this.hireQueue.length && !this.anyHired) {
-      this.setSpeech("Fine, I'll start small.");
+      this.setSpeech("Of course. We'll start small.");
       this.hireIndex = 0;
       this.placeManagerAndTeams(this.hireQueue[0], this.hireQueue[0].name);
       this.hireIndex = 1;
@@ -248,10 +314,10 @@ export class Sim {
       this.introPhase = 'addteam';
       this.addTeamCount = 0;
       this.addTeamValue = '';
-      this.setSpeech('Want to add your own?');
+      this.setSpeech("Anything else you'd like a team for?");
     } else {
       const nx = this.currentHire()!;
-      this.setSpeech(nx.name + ' would run ' + nx.runs + ' — ' + nx.teams.length + ' teams, ' + helperCount(nx) + ' helpers');
+      this.setSpeech(nx.name + ' would run ' + nx.runs + ' — ' + plural(nx.teams.length, 'team') + ', ' + plural(helperCount(nx), 'helper'));
     }
     this.dirty = true;
     this.notify();
@@ -279,7 +345,7 @@ export class Sim {
     genericAgents().forEach((a) => {
       m.agents.push({ id: id + '-' + a.n.toLowerCase(), name: a.n, role: a.role, team: id, doing: a.doing, backlog: a.backlog.slice(), done: a.done.slice(), blocked: null, fear: null });
     });
-    this.card('ORG', name.toUpperCase(), '', 'New team under PIP. Drag agents in any time.');
+    this.card('ORG', name.toUpperCase(), '', 'New team under VIC. Drag agents in any time.');
     this.addTeamCount++;
     this.addTeamValue = '';
     this.dirty = true;
@@ -291,16 +357,16 @@ export class Sim {
     this.tourStart();
   }
 
-  // --- the four-stop tour ---
+  // --- the two-stop tour (U14): the org overview, then the one fix. Tools and the
+  // recorder are no longer taught here -- their tips show once, the first time the
+  // phone "+" sheet opens (see openPhoneAdd()). Desktop's dock keeps its own hover tips.
   tourStart() {
     this.tourOn = true;
     this.tourStep = 0;
     this.tourStepStart = NOW();
     this.tourWaiting = false;
-    this.tourToolPlaced = false;
-    this.tourRecPlaced = false;
-    this.fitView(this.tourBottomInset(0), 1.15);
-    this.setSpeech('Everyone reports up. When someone finishes a job, it travels the lines to me, and I tell you.');
+    this.fitView(this.tourBottomInset(), 1.15);
+    this.setSpeech('Everyone reports up to me. When work is finished, it travels these lines and I tell you.');
     this.forceCompletionForTour();
     this.notify();
   }
@@ -314,16 +380,13 @@ export class Sim {
       this.makeBlocked(free);
       this.tourBlockedAgentId = free.id;
       this.tourWaiting = true;
-      this.centerOnTeam(free.team, this.tourBottomInset(1), 1.6);
+      this.centerOnTeam(free.team, this.tourBottomInset(), 1.6);
     } else {
       this.tourWaiting = false;
     }
   }
   tourCanNext(): boolean {
-    const elapsed = NOW() - this.tourStepStart;
     if (this.tourStep === 1) return !this.tourWaiting;
-    if (this.tourStep === 2) return this.tourToolPlaced || elapsed >= 12;
-    if (this.tourStep === 3) return this.tourRecPlaced || elapsed >= 12;
     return true;
   }
   tourNext() {
@@ -331,41 +394,27 @@ export class Sim {
     if (this.tourStep === 0) {
       this.tourStep = 1;
       this.tourStepStart = NOW();
-      this.setSpeech('Colours are moods. Green is flow, orange is swamped, red means stuck. One of them is stuck right now. Tap them.');
+      this.setSpeech('Colour shows how each helper is doing, and red means stuck. One is stuck now; tap it to step in.');
       this.forceBlockForTour();
     } else if (this.tourStep === 1) {
-      this.tourEnterTools();
-    } else if (this.tourStep === 2) {
-      this.tourStep = 3;
-      this.tourStepStart = NOW();
-      this.tourRecPlaced = false;
-      this.sel = null;
-      this.fitView(this.tourBottomInset(3), 1.15);
-      this.setSpeech('The recorder watches a team for you and sends a recap on a schedule. Drop it near the team you care about.');
-    } else if (this.tourStep === 3) {
       this.tourEnd();
       return;
     }
     this.notify();
   }
   tourAdvanceAfterFix() {
-    this.setSpeech("That's the job. You only step in when it matters.");
-  }
-  tourEnterTools() {
-    this.tourStep = 2;
-    this.tourStepStart = NOW();
-    this.tourToolPlaced = false;
-    this.sel = null;
-    this.fitView(this.tourBottomInset(2), 1.15);
-    this.setSpeech("These are tools. Drag one next to a team and they'll use it. Hover or hold one to see what it does.");
-    this.notify();
+    this.setSpeech("That's the whole job. You step in only when it matters.");
   }
   tourEnd() {
     this.tourOn = false;
     this.tourStep = 0;
     this.m.onboarded = true;
-    this.setSpeech("It's yours now. Drag anything, rename anything, hire more from the dock. I'll be up here.");
+    const phone = typeof window !== 'undefined' && window.innerWidth < 560;
+    this.setSpeech(phone ? "It's yours now. Tap + to add teams; I'll be up here." : "It's yours now. Hire more from the dock; I'll be up here.");
     this.dirty = true;
+    // Phone: the tour left the camera framed on its last stop. Refit so nothing
+    // sits clipped at the screen edge once the chrome (dock, feed) settles back in.
+    if (typeof window !== 'undefined' && window.innerWidth < 560) this.fitView();
     this.save();
     this.notify();
   }
@@ -373,10 +422,73 @@ export class Sim {
     this.tourEnd();
   }
 
+  // --- the scripted first minute (full valley / skip path only, once per saved valley) ---
+  startStory() {
+    this.storyOn = true;
+    this.storyStart = NOW();
+    this.storyScoutDone = false;
+    this.storyBillsPaidDone = false;
+    this.storyBillsStuckDone = false;
+    this.storyRecapDone = false;
+  }
+  tickStory(t: number) {
+    if (!this.storyOn) return;
+    const el = t - this.storyStart;
+    const bills = this.agent('money-bills');
+    const scout = this.agent('job-scout');
+    if (!this.storyBillsPaidDone && el >= 5) {
+      this.storyBillsPaidDone = true;
+      if (bills && bills.doing) this.complete(bills, t);
+    }
+    if (!this.storyScoutDone && el >= 8) {
+      this.storyScoutDone = true;
+      if (scout) {
+        scout.doing = 'Found 12 new postings overnight';
+        this.complete(scout, t);
+      }
+    }
+    if (!this.storyBillsStuckDone && el >= 15) {
+      this.storyBillsStuckDone = true;
+      if (bills) {
+        this.makeBlocked(bills);
+        this.card('VIC', this.pathName('money'), 'VIC', ' noticed within 2 seconds. BILLS needs you for the bank login.');
+      }
+    }
+    const fixed = !bills || !bills.blocked;
+    if (this.storyBillsStuckDone && !this.storyRecapDone && (fixed || el >= 60)) {
+      this.storyRecapDone = true;
+      this.storyOn = false;
+      this.card('RECAP', 'MORNING', '', 'Morning recap: 12 new jobs found, 1 bill paid, 1 thing needed you, and you fixed it.');
+      this.m.storyDone = true;
+      this.dirty = true;
+      this.save();
+    }
+  }
+
+  /** T5: fills in defaults for every field added since v3, then bumps to CURRENT_V so
+   *  the next save() writes the new shape. An old (v3) save from the live site must
+   *  load without throwing -- this is the one place allowed to assume a field is missing. */
+  migrate(s: WorldModel) {
+    // PIP was renamed VIC (Chief of Stuff) on 2026-09-27; older saves still carry the old name.
+    const chief = s.sups && s.sups.pip;
+    if (chief && chief.name === 'PIP') {
+      chief.name = 'VIC';
+      chief.role = 'CHIEF OF STUFF';
+    }
+    if (s.v >= CURRENT_V) return;
+    // v3 -> v4 (demo-v2): Need.snoozeUntil (U6, LATER) is new and optional -- a v3
+    // save simply won't have the key, which is already a valid "not snoozed" state,
+    // but every need gets the key explicitly so nothing downstream has to guess.
+    (s.needs || []).forEach((n: Need) => {
+      if (!('snoozeUntil' in n)) n.snoozeUntil = undefined;
+    });
+    s.v = CURRENT_V;
+  }
   load(): WorldModel | null {
     try {
       const s = JSON.parse(localStorage.getItem(KEY) || 'null');
-      if (!s || (s.v !== 3 && s.v !== 4)) return null;
+      if (!s || (s.v !== 3 && s.v !== CURRENT_V)) return null;
+      this.migrate(s);
       s.teams.forEach((T: Team) => {
         T.born = null;
         T.fireAt = null;
@@ -411,10 +523,22 @@ export class Sim {
 
   start() {
     this.fitView();
+    // T4: don't force a full-tree React re-render every animation frame. Only when
+    // something actually changed (dirty), an interaction needs live feedback (drag),
+    // an animation is mid-flight (pulses), or on a low-rate heartbeat so idle-but-
+    // time-based UI (the typewriter, "3s ago" timestamps) still drifts forward.
+    const HEARTBEAT = 0.15;
+    let lastHeartbeat = 0;
     const loop = () => {
       this.raf = requestAnimationFrame(loop);
       this.step();
-      this.notify();
+      const t = NOW();
+      const dueForHeartbeat = t - lastHeartbeat >= HEARTBEAT;
+      if (this.dirty || this.drag || this.pulses.length > 0 || dueForHeartbeat) {
+        if (dueForHeartbeat) lastHeartbeat = t;
+        this.renderTicks++;
+        this.notify();
+      }
     };
     loop();
   }
@@ -501,7 +625,108 @@ export class Sim {
       ah = Math.max(200, vh - topInset - bottomInset);
     const bw = x1 - x0,
       bh = y1 - y0;
-    const z = cl(Math.min(aw / bw, ah / bh), 0.3, maxZoom);
+    const phone = typeof window !== 'undefined' && vw < 560;
+    // FIX1: once the org has been reflowed into a scrollable column (it doesn't fit
+    // any other way on this screen), a generic fit must not try to squeeze the whole
+    // tall column into view -- that's exactly what the column was reflowed to avoid.
+    if (phone && this.phoneColumnLayout) {
+      const z = Math.max(cl(aw / bw, 0.3, maxZoom), 0.7);
+      this.zoom = z;
+      this.pan = { x: 30 + (aw - bw * z) / 2 - x0 * z, y: topInset - y0 * z };
+      return;
+    }
+    let z = cl(Math.min(aw / bw, ah / bh), 0.3, maxZoom);
+    // Phones: never open on a squint. A crowded valley can compute below 0.7 to fit
+    // everything, but readable beats complete on a screen this small.
+    if (phone) z = Math.max(z, 0.7);
+    this.zoom = z;
+    this.pan = { x: 30 + (aw - bw * z) / 2 - x0 * z, y: topInset + (ah - bh * z) / 2 - y0 * z };
+  }
+  /** FIX1: on phone, stack each manager's teams in a vertical column under it (PIP,
+   *  then each manager and its teams in turn), so the org reads top to bottom and
+   *  the user pans down to see the rest instead of everything getting cropped or
+   *  squinted at. Only used when the whole org doesn't fit even at the 0.55 floor. */
+  layoutPhoneColumn() {
+    this.phoneColumnLayout = true;
+    const m = this.m;
+    const cx = m.sups.pip.x;
+    const GAP = 40;
+    let cursor = m.sups.pip.y + 90;
+    Object.keys(m.sups)
+      .filter((id) => id !== 'pip')
+      .forEach((mid) => {
+        const mgr = m.sups[mid];
+        cursor += 90;
+        mgr.x = cx;
+        mgr.y = cursor;
+        cursor += 90 + GAP;
+        m.teams
+          .filter((T) => T.boss === mid && T.state !== 'hidden')
+          .forEach((T) => {
+            const n = this.members(T).length,
+              h = roomH(n);
+            T.x = cx;
+            T.y = cursor + h / 2;
+            cursor += h + GAP;
+          });
+        cursor += GAP;
+      });
+  }
+  /** Bounding box over PIP, every manager and every team floor (FIX1: the whole org,
+   *  not just the first manager's). Shared by centerOnOrgTop's fit attempts. */
+  private orgBounds() {
+    const m = this.m;
+    let x0 = 1e9,
+      y0 = 1e9,
+      x1 = -1e9,
+      y1 = -1e9;
+    const add = (a: number, b: number, c: number, d: number) => {
+      x0 = Math.min(x0, a);
+      y0 = Math.min(y0, b);
+      x1 = Math.max(x1, c);
+      y1 = Math.max(y1, d);
+    };
+    Object.values(m.sups).forEach((s) => add(s.x - 60, s.y - 60, s.x + 60, s.y + 70));
+    m.teams.forEach((T) => {
+      if (T.state === 'hidden') return;
+      const n = this.members(T).length,
+        w = roomW(n),
+        h = roomH(n);
+      add(T.x - w / 2, T.y - h / 2 - 30, T.x + w / 2, T.y + h / 2);
+    });
+    return { x0, y0, x1, y1 };
+  }
+  /** Frame the whole org (PIP, every manager, every team) centered horizontally --
+   *  used after a phone skip. Tries a readable zoom (>=0.7) first, then a 0.55 floor
+   *  rather than crop a team, and only reflows into a scrollable vertical column
+   *  (layoutPhoneColumn) when even that doesn't fit without cropping. */
+  centerOnOrgTop(bottomInset: number, maxZoom: number) {
+    const vw = window.innerWidth,
+      vh = window.innerHeight;
+    const topInset = 74;
+    const aw = Math.max(200, vw - this.feedW() - 60),
+      ah = Math.max(200, vh - topInset - bottomInset);
+    const phone = typeof window !== 'undefined' && vw < 560;
+    let { x0, y0, x1, y1 } = this.orgBounds();
+    let bw = x1 - x0,
+      bh = y1 - y0;
+    let z = cl(Math.min(aw / bw, ah / bh), 0.3, maxZoom);
+    if (phone && z < 0.7) {
+      if (bw * 0.55 <= aw && bh * 0.55 <= ah) {
+        z = 0.55;
+      } else {
+        // Even the floor crops something -- reflow to a column and fit its width only;
+        // the column is taller than the viewport by design, so the user pans down.
+        this.layoutPhoneColumn();
+        ({ x0, y0, x1, y1 } = this.orgBounds());
+        bw = x1 - x0;
+        bh = y1 - y0;
+        z = Math.max(cl(aw / bw, 0.3, maxZoom), 0.7);
+        this.zoom = z;
+        this.pan = { x: 30 + (aw - bw * z) / 2 - x0 * z, y: topInset - y0 * z };
+        return;
+      }
+    }
     this.zoom = z;
     this.pan = { x: 30 + (aw - bw * z) / 2 - x0 * z, y: topInset + (ah - bh * z) / 2 - y0 * z };
   }
@@ -509,21 +734,36 @@ export class Sim {
   centerOnTeam(teamId: string, bottomInset: number, maxZoom: number) {
     const T = this.team(teamId);
     if (!T) return;
+    // FIX2: frame the team together with its manager, so the manager's head and
+    // label land inside the view instead of under the title bar.
     const n = this.members(T).length,
-      w = roomW(n) + 90,
-      h = roomH(n) + 90;
+      rw = roomW(n),
+      rh = roomH(n);
+    let x0 = T.x - rw / 2 - 45,
+      y0 = T.y - rh / 2 - 60,
+      x1 = T.x + rw / 2 + 45,
+      y1 = T.y + rh / 2 + 45;
+    const mgr = this.m.sups[T.boss];
+    if (mgr && mgr.id !== 'pip') {
+      x0 = Math.min(x0, mgr.x - 70);
+      x1 = Math.max(x1, mgr.x + 70);
+      y0 = Math.min(y0, mgr.y - 70);
+    }
+    const w = x1 - x0,
+      h = y1 - y0;
     const vw = window.innerWidth,
       vh = window.innerHeight;
-    const topInset = 74;
+    // Keep world objects clear of the title bar plus an 8px margin.
+    const topInset = 74 + 8;
     const aw = Math.max(200, vw - this.feedW() - 60),
       ah = Math.max(200, vh - topInset - bottomInset);
     const z = cl(Math.min(aw / w, ah / h), 0.3, maxZoom);
     this.zoom = z;
-    this.pan = { x: 30 + (aw - w * z) / 2 - (T.x - w / 2) * z, y: topInset + (ah - h * z) / 2 - (T.y - h / 2) * z };
+    this.pan = { x: 30 + (aw - w * z) / 2 - x0 * z, y: topInset + (ah - h * z) / 2 - y0 * z };
   }
-  /** Bottom inset (px) to keep the world clear of the speech card, and the dock once it shows. */
-  tourBottomInset(step: number) {
-    return step >= 2 ? 320 : 210;
+  /** Bottom inset (px) to keep the world clear of the speech card. Both tour stops use the same one now that U14 dropped the dock-height stops. */
+  tourBottomInset() {
+    return 210;
   }
   zoomAt(sx: number, sy: number, f: number) {
     const z = this.zoom,
@@ -640,8 +880,15 @@ export class Sim {
   onUp(e: PointerEvent) {
     this.pts.delete(e.pointerId);
     if (this.pinch) {
-      if (this.pts.size < 2) this.pinch = null;
-      this.drag = null;
+      if (this.pts.size < 2) {
+        this.pinch = null;
+        if (this.pts.size === 1) {
+          const [rem] = [...this.pts.entries()];
+          this.drag = { kind: 'pan', sx: rem[1].x, sy: rem[1].y, ox: this.pan.x, oy: this.pan.y, moved: true };
+        } else {
+          this.drag = null;
+        }
+      }
       this.notify();
       return;
     }
@@ -724,11 +971,47 @@ export class Sim {
     const F: Furniture = { id: 'fx' + Date.now().toString(36), type, x, y, on: FT[type].opts.map((_, i) => i === 0), born: NOW() };
     this.m.furn.push(F);
     this.announceFurn(F);
-    this.sel = { kind: 'furn', id: F.id };
-    this.popAt = NOW();
+    // U3: don't auto-select (and pop open its sheet) over the tour.
+    if (!this.tourOn) {
+      this.sel = { kind: 'furn', id: F.id };
+      this.popAt = NOW();
+    }
     this.dirty = true;
-    if (this.tourOn && this.tourStep === 2) this.tourToolPlaced = true;
-    if (this.tourOn && this.tourStep === 3 && type === 'rec') this.tourRecPlaced = true;
+  }
+  /** Phone (U2): the "+" sheet taps a tool tile instead of dragging one off a dock. */
+  placeFurnFromSheet(type: Furniture['type']) {
+    const vw = window.innerWidth,
+      vh = window.innerHeight;
+    const w = this.toWorld(vw / 2 + (Math.random() - 0.5) * 70, vh / 2 + (Math.random() - 0.5) * 60);
+    this.placeFurn(type, w.x, w.y);
+    this.phoneAddOpen = false;
+    this.notify();
+  }
+  openPhoneAdd() {
+    this.phoneAddOpen = true;
+    this.showAddSheetToolsTip = !this.seenToolsTip;
+    this.showAddSheetRecorderTip = !this.seenRecorderTip;
+    this.seenToolsTip = true;
+    this.seenRecorderTip = true;
+    this.notify();
+  }
+  closePhoneAdd() {
+    this.phoneAddOpen = false;
+    this.notify();
+  }
+  openPhoneMood() {
+    this.phoneMoodOpen = true;
+    this.notify();
+  }
+  /** U5: the primary-action pill always opens PIP's sheet, never toggles it closed. */
+  openPipNeeds() {
+    this.sel = { kind: 'sup', id: 'pip' };
+    this.popAt = NOW();
+    this.notify();
+  }
+  closePhoneMood() {
+    this.phoneMoodOpen = false;
+    this.notify();
   }
   reparent(kind: 'team' | 'sup', id: string, bossId: string) {
     const m = this.m,
@@ -827,7 +1110,7 @@ export class Sim {
         T.state = 'active';
         T.born = t;
         T.fireAt = t + 0.2;
-        this.card('LIVE', this.pathName('tax'), '', 'TAXES team is live with ' + this.members(T).length + ' agents.');
+        this.card('LIVE', this.pathName('tax'), '', 'TAXES team is live with ' + plural(this.members(T).length, 'agent') + '.');
       }
     } else if (action === 'groc') {
       const T = this.team('groc');
@@ -849,6 +1132,11 @@ export class Sim {
       }
     } else if (action === 'ack') {
       this.card('YOU', this.pathName(nd.team), '', nd.ok || 'Marked handled.');
+    } else if (action === 'skip') {
+      nd.snoozeUntil = t + 60;
+      this.m.needs.unshift(nd);
+      const a = nd.agent ? this.agent(nd.agent) : null;
+      this.card('YOU', this.pathName(nd.team), a ? a.name : '', " can wait. I'll bring it back in a minute.");
     }
     this.dirty = true;
     this.notify();
@@ -869,8 +1157,9 @@ export class Sim {
 
   step() {
     const t = NOW();
+    this.tickStory(t);
     const speed = { slow: 1.8, normal: 1, fast: 0.45 }[this.settings.simSpeed] || 1;
-    if (t > this.nextSim) {
+    if (!this.storyOn && t > this.nextSim) {
       this.nextSim = t + (2.4 + Math.random() * 2.4) * speed;
       const dragA = this.drag && this.drag.kind === 'agent' ? this.drag.id : null;
       const live = this.m.agents.filter((a) => {
@@ -879,14 +1168,23 @@ export class Sim {
       });
       live.forEach((a) => {
         if (!a.doing && a.backlog.length) a.doing = a.backlog.shift()!;
+        else if (!a.doing && !a.backlog.length && !a.blocked && !a.fear) {
+          // U7: an idle valley stays healthy -- a bored agent, with nothing
+          // queued at all, has a chance each tick to pull a task off its
+          // team's pool instead of waiting for the random single-agent inflow.
+          const T = this.team(a.team);
+          const state: DecideState = { poolHasWork: !!(T && T.pool.length), agentName: a.name, team: a.team };
+          if (decide('idlePickup', state, ['pickup', 'wait']) === 'pickup') this.inflow(a);
+        }
       });
       const pick = <U,>(arr: U[]) => arr[Math.floor(Math.random() * arr.length)];
       const free = live.filter((a) => a.doing && !a.blocked && !a.fear);
       const nBlk = live.filter((a) => a.blocked).length,
         nFear = live.filter((a) => a.fear).length;
       const r = Math.random();
-      const blockedP = 0.09,
-        fearP = blockedP + 0.07 * this.fearMult,
+      // Halved from the original 0.09 / +0.07 — PIP should ask less.
+      const blockedP = 0.045,
+        fearP = blockedP + 0.035 * this.fearMult,
         inflowP = fearP + 0.24;
       if (r < blockedP && nBlk < 2 && free.length) this.makeBlocked(pick(free));
       else if (r < fearP && nFear < 2 && free.length) this.makeFear(pick(free));
@@ -939,7 +1237,8 @@ export class Sim {
     const stuck = inWindow.filter((e) => e.kind === 'stuck');
     const waiting = inWindow.filter((e) => e.kind === 'fear').length;
     const names = teams.map((T) => T.name).join(', ');
-    let text = ' — ' + REC_LABELS[optIdx] + ': ' + done + ' done';
+    // U13: "Last 10 min: ..." — capitalized, no leading dash.
+    let text = cap(REC_LABELS[optIdx]) + ': ' + done + ' done';
     if (stuck.length) text += ', ' + stuck.length + ' stuck (' + stuck[0].who + ': ' + stuck[0].text + ')';
     if (waiting) text += ', ' + waiting + ' waiting on you';
     text += '.';
@@ -959,12 +1258,11 @@ export class Sim {
     a.recent = (a.recent || []).filter((x) => t - x < 35).concat([t]);
     if (a.recent.length >= 2) a.flowUntil = t + 16;
     T.fireAt = t;
-    const eq = (this.eqMap[T.id] || []).filter((F) => F.type !== 'rec');
-    const via = eq.length ? ' (via ' + eq.map((F) => FT[F.type].name).filter((v, j, arr) => arr.indexOf(v) === j).join(', ') + ')' : '';
+    // U13: drop "(via ...)" from the DONE card -- the equipment tag on the room label already says it.
     const P = this.pathPts(T.id);
     let len = 0;
     for (let j = 0; j < P.length - 1; j++) len += Math.hypot(P[j + 1][0] - P[j][0], P[j + 1][1] - P[j][1]);
-    this.pulses.push({ team: T.id, at: t, dur: cl(len / 420, 0.9, 2.4), card: ['DONE', this.pathName(T.id), a.name, doneText + via] });
+    this.pulses.push({ team: T.id, at: t, dur: cl(len / 420, 0.9, 2.4), card: ['DONE', this.pathName(T.id), a.name, doneText] });
     this.evLog.push({ t, team: T.id, kind: 'done', who: a.name, text: doneText });
     this.dirty = true;
   }
@@ -974,25 +1272,55 @@ export class Sim {
     const task = T.pool[T.pi % T.pool.length];
     T.pi++;
     if (!a.doing && !a.blocked && !a.fear) a.doing = task;
-    else a.backlog.push(task);
+    else {
+      if (a.backlog.length >= 12) return;
+      a.backlog.push(task);
+    }
     this.dirty = true;
   }
   removeNeeds(aid: string, kind: 'blocked' | 'fear') {
     this.m.needs = this.m.needs.filter((n) => !(n.agent === aid && n.kind === kind));
   }
+  /** Open asks, minus any snoozed by `act(nd,'skip')` until their 60s is up. */
+  visibleNeeds(): Need[] {
+    const t = NOW();
+    return this.m.needs.filter((n) => !n.snoozeUntil || n.snoozeUntil <= t);
+  }
+  /** The open-asks row shape shared by PIP's popup and the feed's pinned-asks section (U13). */
+  needCards() {
+    return this.visibleNeeds().map((nd) => ({
+      path: this.pathName(nd.team),
+      text: nd.text,
+      acts: nd.acts.map(([label, action], i) => ({ label, bg: i === 0 ? '#15140f' : 'transparent', fg: i === 0 ? '#f4f3ee' : '#15140f', go: () => this.act(nd, action) })),
+    }));
+  }
+  /** PIP shows at most 3 open asks, and never two with the same text. Beyond that, an ask is dropped. */
+  pushNeed(nd: Need) {
+    if (this.m.needs.some((n) => n.text === nd.text)) return;
+    if (this.visibleNeeds().length >= 3) return;
+    this.m.needs.unshift(nd);
+  }
   makeBlocked(a: Agent) {
     const [text, fix] = BLOCKERS[a.team] || BLOCKERS._;
     a.blocked = { text, fix };
     this.removeNeeds(a.id, 'blocked');
-    this.m.needs.unshift({ id: 'nb' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'blocked', text: a.name + ' is stuck: ' + text + '.', acts: [[fix, 'unblock'], ['LATER', 'skip']] });
+    this.pushNeed({ id: 'nb' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'blocked', text: a.name + ' is stuck: ' + text + '.', acts: [[fix, 'unblock'], ['LATER', 'skip']] });
     this.card('STUCK', this.pathName(a.team), a.name, ' is stuck: ' + text + '.');
     this.evLog.push({ t: NOW(), team: a.team, kind: 'stuck', who: a.name, text });
   }
   makeFear(a: Agent) {
     const f = FEARS[a.team] || FEARS._;
+    // "No, just handle it" — PIP resolves most asks itself instead of interrupting you.
+    const state: DecideState = { askFirst: this.askFirst, agentName: a.name, team: a.team };
+    if (decide('handleOrAsk', state, ['handled', 'ask']) === 'handled') {
+      this.card('HANDLED', this.pathName(a.team), 'VIC', ' handled it: ' + a.name + ' skipped ' + f + '.');
+      this.evLog.push({ t: NOW(), team: a.team, kind: 'fear', who: a.name, text: f });
+      this.complete(a, NOW());
+      return;
+    }
     a.fear = f;
     this.removeNeeds(a.id, 'fear');
-    this.m.needs.unshift({ id: 'nf' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'fear', text: a.name + ' wants your OK before ' + f + '.', acts: [['GO AHEAD', 'approve'], ['HOLD OFF', 'hold']] });
+    this.pushNeed({ id: 'nf' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'fear', text: a.name + ' wants your OK before ' + f + '.', acts: [['GO AHEAD', 'approve'], ['HOLD OFF', 'hold']] });
     this.card('ASKS', this.pathName(a.team), a.name, ' wants your OK before ' + f + '.');
     this.evLog.push({ t: NOW(), team: a.team, kind: 'fear', who: a.name, text: f });
   }
@@ -1000,9 +1328,11 @@ export class Sim {
     a.blocked = null;
     this.removeNeeds(a.id, 'blocked');
     this.card('YOU', this.pathName(a.team), a.name, ' is unblocked and back at it.');
-    if (this.tourOn && this.tourStep === 1 && this.tourWaiting && a.id === this.tourBlockedAgentId) {
+    if (this.tourOn && this.tourStep === 1 && this.tourWaiting) {
       this.tourWaiting = false;
       this.tourAdvanceAfterFix();
+      // U3: the popup this fix was made from must not sit on top of the tour's next line.
+      this.sel = null;
     }
   }
   approve(a: Agent) {
@@ -1041,25 +1371,27 @@ export class Sim {
     this.card('YOU', this.pathName(a.team), a.name, ' picked up 2 new tasks.');
   }
   mood(a: Agent, t: number): Mood {
-    if (a.blocked) return 'frustrated';
-    if (a.fear) return 'stalled';
-    if (a.backlog.length >= 4) return 'overwhelmed';
-    if (!a.doing && !a.backlog.length) return 'bored';
-    if ((a.flowUntil || 0) > t) return 'flow';
-    return 'working';
+    const state: DecideState = {
+      blocked: !!a.blocked,
+      waitingOnApproval: !!a.fear,
+      backlogCount: a.backlog.length,
+      hasCurrentTask: !!a.doing,
+      inFlow: (a.flowUntil || 0) > t,
+    };
+    return decide('mood', state, ['frustrated', 'stalled', 'overwhelmed', 'bored', 'flow', 'working'] as Mood[]);
   }
   thought(a: Agent, md: Mood) {
     switch (md) {
       case 'flow':
         return { text: 'On a roll. ' + (a.recent || []).length + ' done back to back.', why: 'finishing fast' };
       case 'overwhelmed':
-        return { text: a.backlog.length + (a.doing ? 1 : 0) + ' things on my plate. Where do I even start?', why: a.backlog.length + ' queued' };
+        return { text: plural(a.backlog.length + (a.doing ? 1 : 0), 'thing') + ' on my plate. Where do I even start?', why: 'too much queued' };
       case 'bored':
         return { text: 'Nothing in my queue. Got anything for me?', why: 'empty backlog' };
       case 'frustrated':
-        return { text: 'Can’t finish this. ' + cap(a.blocked!.text) + '.', why: 'blocked' };
+        return { text: 'Can’t finish this. ' + cap(a.blocked!.text) + '.', why: 'needs you' };
       case 'stalled':
-        return { text: 'Not sure about ' + a.fear + '. Waiting on your OK.', why: 'afraid to proceed' };
+        return { text: 'Not sure about ' + a.fear + '. Waiting on your OK.', why: 'waiting for your OK' };
       case 'pending':
         return { text: 'Ready to start once you sign.', why: 'team not live' };
       default:
@@ -1106,7 +1438,7 @@ export class Sim {
       if (T.state === 'hidden') return 'proposed';
       if (T.state === 'pending') return 'pending';
       const mem = this.members(T);
-      return mem.length + ' agents · ' + mem.filter((a) => a.doing).length + ' in work';
+      return plural(mem.length, 'agent') + ' · ' + mem.filter((a) => a.doing).length + ' in work';
     };
     const reportRows = (id: string) => {
       const rows: { name: string; stat: string; dotR: string; dotBg: string; go: () => void }[] = [];
@@ -1115,7 +1447,7 @@ export class Sim {
         .forEach((s) =>
           rows.push({
             name: s.name,
-            stat: 'manager · ' + (m.teams.filter((T) => T.boss === s.id).length + Object.values(m.sups).filter((o) => o.boss === s.id).length) + ' reports',
+            stat: 'manager · ' + plural(m.teams.filter((T) => T.boss === s.id).length + Object.values(m.sups).filter((o) => o.boss === s.id).length, 'report'),
             dotR: '50%',
             dotBg: '#15140f',
             go: () => this.select({ kind: 'sup', id: s.id }),
@@ -1179,7 +1511,7 @@ export class Sim {
                 : [];
       p.hasMoodActs = p.moodActs.length > 0;
       p.secs = this.secs(t, a.doing ? [{ text: a.doing }] : [], a.backlog.map((x) => ({ text: x })), a.done.slice(0, 4).map((x) => ({ text: x })));
-      p.hint = pend ? 'Waiting on your signature. Open PIP to sign.' : 'Drag me onto another floor to reassign.';
+      p.hint = pend ? 'Waiting on your signature. Open VIC to sign.' : 'Drag me onto another floor to reassign.';
     } else if (sel.kind === 'team') {
       const T = this.team(sel.id);
       if (!T) return null;
@@ -1188,7 +1520,7 @@ export class Sim {
       wy = T.y;
       r = roomW(mem.length) / 2;
       p.title = T.name;
-      p.sub = (this.chain(T.boss).join(' › ') || 'PIP') + ' · ' + mem.length + ' agents';
+      p.sub = (this.chain(T.boss).join(' › ') || 'VIC') + ' · ' + plural(mem.length, 'agent');
       p.hasEdit = true;
       p.nameVal = T.name;
       p.onName = (v: string) => {
@@ -1221,7 +1553,7 @@ export class Sim {
       });
       if (mem.length) p.secs = this.secs(t, doing, backlog, done.slice(0, 6));
       if (!mem.length) p.acts = [btn('DELETE FLOOR', () => this.deleteTeam(T.id), 'danger')];
-      p.hint = T.state === 'pending' ? 'Pending your signature. Open PIP to sign.' : mem.length ? 'Drag the floor onto a manager to change who it reports to.' : 'Empty floor. Drag agents in from other teams to staff it.';
+      p.hint = T.state === 'pending' ? 'Pending your signature. Open VIC to sign.' : mem.length ? 'Drag the floor onto a manager to change who it reports to.' : 'Empty floor. Drag agents in from other teams to staff it.';
     } else if (sel.kind === 'furn') {
       const F = this.furnById(sel.id);
       if (!F) return null;
@@ -1288,15 +1620,12 @@ export class Sim {
       p.noRows = !rows.length;
       p.noRowsText = 'No reports yet. Drop a team or manager on ' + s.name + '.';
       if (s.id === 'pip') {
-        p.sub = 'PRIME SUPERVISOR · ' + m.teams.filter((T) => T.state === 'active').length + ' teams running';
+        p.sub = 'CHIEF OF STUFF · ' + plural(m.teams.filter((T) => T.state === 'active').length, 'team') + ' running';
+        const vNeeds = this.visibleNeeds();
         p.hasNeeds = true;
-        p.needCount = m.needs.length;
-        p.noNeeds = m.needs.length === 0;
-        p.needs = m.needs.map((nd) => ({
-          path: this.pathName(nd.team),
-          text: nd.text,
-          acts: nd.acts.map(([label, action], i) => ({ label, bg: i === 0 ? '#15140f' : 'transparent', fg: i === 0 ? '#f4f3ee' : '#15140f', go: () => this.act(nd, action) })),
-        }));
+        p.needCount = vNeeds.length;
+        p.noNeeds = vNeeds.length === 0;
+        p.needs = this.needCards();
         p.acts = [btn('+ MANAGER', () => this.addManager('pip'), 'primary'), btn('+ TEAM', () => this.addTeam('pip'))];
         p.hint = 'Everything your teams can’t decide alone lands here.';
       } else {
@@ -1399,7 +1728,7 @@ export class Sim {
         kind: F.type,
         t,
         label: D.name,
-        sub: nOn + ' on · ' + this.inRange(F).length + ' teams',
+        sub: nOn + ' on · ' + plural(this.inRange(F).length, 'team'),
         showRange: isSel || dragging,
         rL: -FR,
         rD: FR * 2,
@@ -1526,6 +1855,8 @@ export class Sim {
           e2 += look;
           eH = 3;
         }
+        // U15/T6: prefers-reduced-motion stops the bob, the pulse and the aura.
+        if (this.reducedMotion) bob = 0;
         const blink = ((t * 0.9 + ph * 1.37) % 4.3) < 0.13;
         if (blink && md !== 'bored' && md !== 'flow') {
           eT += (eH - 0.8) / 2;
@@ -1537,7 +1868,7 @@ export class Sim {
         const th = this.thought(a, md);
         const hasBubble = tmode !== 'off' && !walking && (aSel || hov || tmode === 'always');
         const hasIcon = notable && !hasBubble && !walking && tmode !== 'off';
-        const pulse = 1 + 0.08 * Math.sin(t * (md === 'frustrated' ? 9 : md === 'overwhelmed' ? 7 : 3) + ph);
+        const pulse = this.reducedMotion ? 1 : 1 + 0.08 * Math.sin(t * (md === 'frustrated' ? 9 : md === 'overwhelmed' ? 7 : 3) + ph);
         const decoT = 9.5 + bob;
         const cyc = (sp: number, ph2: number) => ((((t * sp + ph2) % 1) + 1) % 1);
         return {
@@ -1552,6 +1883,8 @@ export class Sim {
           ringT: 4 + bob,
           dotT: 1 + bob,
           nameT: 30 + bob,
+          // U11: world labels stay readable at any zoom instead of shrinking to nothing.
+          labelSize: Math.max(7.5, 11 / z),
           working: (md === 'working' || atF) && !walking && !pend,
           d1: 0.4 + 0.6 * Math.abs(Math.sin(t * 6 + ph)),
           d2: 0.4 + 0.6 * Math.abs(Math.sin(t * 6 + ph + 1)),
@@ -1588,12 +1921,15 @@ export class Sim {
           icon: md === 'overwhelmed' ? String(a.backlog.length + (a.doing ? 1 : 0)) : MOOD[md].icon,
           mc: MOOD[md].c,
           hasAura: notable,
-          auraOp: 0.55 + 0.25 * Math.sin(t * 3 + ph),
+          auraOp: this.reducedMotion ? 0.55 : 0.55 + 0.25 * Math.sin(t * 3 + ph),
           auraSc: pulse,
           op: pend ? 0.4 : 1,
           sel: aSel,
           showName: (aSel || always || z >= 1.25) && !hasBubble,
           name: a.name,
+          // U15/T6: keyboard access -- role="button" + Enter/Space in Agent.tsx call this.
+          ariaLabel: a.name + ', ' + (MOOD[md].label || MOOD[md].tag || 'working').toLowerCase(),
+          activate: () => this.select({ kind: 'agent', id: a.id }),
           down: (e: React.PointerEvent) => this.nodeDown(e, 'agent', a.id),
           enter: () => {
             this.hoverAgent = a.id;
@@ -1607,6 +1943,7 @@ export class Sim {
         .map((F) => FT[F.type].short)
         .filter((v, j, arr) => arr.indexOf(v) === j)
         .join(' · ');
+      const anyStuck = mem.some((a) => a.blocked);
       rooms.push({
         id: T.id,
         l: T.x - w / 2,
@@ -1620,7 +1957,7 @@ export class Sim {
         ro: 0.5 * (1 - cl(fe / 0.7, 0, 1)),
         rs: 1 + cl(fe / 0.7, 0, 1) * 0.35,
         bg: pend ? 'rgba(251,250,245,.55)' : hot ? '#ffffff' : '#fbfaf5',
-        border: pend ? '2px dashed rgba(21,20,15,.28)' : hot ? '3px solid #15140f' : '2px solid #15140f',
+        border: pend ? '2px dashed rgba(21,20,15,.28)' : anyStuck ? '3px solid #d63c2f' : hot ? '3px solid #15140f' : '2px solid #15140f',
         shadow: pend ? 'none' : isSel || hot ? '0 4px 0 rgba(21,20,15,.1), 0 0 0 6px rgba(21,20,15,.1)' : '0 4px 0 rgba(21,20,15,.1)',
         labelColor: pend ? '#6b6a62' : '#15140f',
         name: T.name,
@@ -1634,6 +1971,9 @@ export class Sim {
         }),
         desks: dk.map((d) => ({ l: w / 2 + d[0] - 10, t: h / 2 + d[1] + 8, c: pend ? 'rgba(21,20,15,.2)' : 'rgba(21,20,15,.5)' })),
         agents,
+        // U15/T6: keyboard access for the floor itself.
+        ariaLabel: T.name + ', ' + (pend ? 'pending' : anyStuck ? 'has a stuck agent' : n === 0 ? 'empty' : plural(n, 'agent')),
+        activate: () => this.select({ kind: 'team', id: T.id }),
         down: (e: React.PointerEvent) => this.nodeDown(e, 'team', T.id),
       });
     });
@@ -1642,7 +1982,7 @@ export class Sim {
       const prime = s.id === 'pip',
         sz = s.size,
         ph = prime ? 0 : si * 1.3;
-      const bob = Math.sin(t * 2 + ph) * (prime ? 4 : 3);
+      const bob = this.reducedMotion ? 0 : Math.sin(t * 2 + ph) * (prime ? 4 : 3);
       const rv = t - (s.recv || -99),
         rsc = rv >= 0 && rv < 0.45 ? 1 + 0.12 * Math.sin((rv / 0.45) * Math.PI) : 1;
       const born = s.born != null ? cl((t - s.born) / 0.6, 0, 1) : 1;
@@ -1679,7 +2019,7 @@ export class Sim {
         halo: sz * 1.85,
         haloL: -sz * 0.925,
         haloT: -sz * 0.925 + bob,
-        hs: hot ? 1.25 : 1 + Math.sin(t * 1.6 + ph) * 0.06,
+        hs: hot ? 1.25 : this.reducedMotion ? 1 : 1 + Math.sin(t * 1.6 + ph) * 0.06,
         haloOp: hot ? 0.7 : isSel ? 0.45 : prime ? 0.18 : 0.13,
         haloStyle: hot ? 'solid' : 'dashed',
         haloBg: hot ? 'rgba(21,20,15,.06)' : 'transparent',
@@ -1698,9 +2038,13 @@ export class Sim {
         name: s.name,
         role: s.role,
         nameSize: prime ? 13 : 12,
-        hasBadge: prime && m.needs.length > 0,
-        badge: m.needs.length,
-        badgeSc: 1 + 0.06 * Math.sin(t * 4),
+        // U5: the bottom-center pill is the main "needs you" cue now, not a badge on PIP.
+        hasBadge: false,
+        badge: this.visibleNeeds().length,
+        badgeSc: this.reducedMotion ? 1 : 1 + 0.06 * Math.sin(t * 4),
+        // U15/T6: keyboard access for the manager pin.
+        ariaLabel: s.name + ', ' + (prime ? 'chief of staff' : s.role.toLowerCase()),
+        activate: () => this.select({ kind: 'sup', id: s.id }),
         down: (e: React.PointerEvent) => this.nodeDown(e, 'sup', s.id),
       });
     });
@@ -1744,10 +2088,10 @@ export class Sim {
 
     const nowMs = Date.now();
     const ago = (ms: number) => (ms < 10000 ? 'now' : ms < 60000 ? Math.floor(ms / 1000) + 's' : Math.floor(ms / 60000) + 'm');
-    const cards = m.feed.map((c) => {
+    const mkCard = (c: FeedCard) => {
       const pr = cl((nowMs - c.ts) / 500, 0, 1);
       const filled = c.kind !== 'DONE' && c.kind !== 'MOVED';
-      const kc = c.kind === 'STUCK' ? '#d63c2f' : c.kind === 'ASKS' ? '#e8b923' : null;
+      const kc = c.kind === 'STUCK' ? '#d63c2f' : c.kind === 'ASKS' ? '#e8b923' : c.kind === 'HANDLED' ? '#3aa865' : null;
       return {
         id: c.id,
         kind: c.kind,
@@ -1760,7 +2104,12 @@ export class Sim {
         kbg: kc || (filled ? '#15140f' : 'transparent'),
         kfg: kc ? '#15140f' : filled ? '#f4f3ee' : '#15140f',
       };
-    });
+    };
+    // U13: a quieter feed — DONE cards fold into one expandable row instead of
+    // crowding out everything else, and the open asks are pinned above all of it.
+    const cards = m.feed.filter((c) => c.kind !== 'DONE').map(mkCard);
+    const doneCards = m.feed.filter((c) => c.kind === 'DONE').map(mkCard);
+    const pinnedAsks = this.needCards();
 
     const pop = sel ? this.buildPop(t, vw, vh) : null;
     const tgt = S[this.addTargetId()] || S.pip;
@@ -1784,10 +2133,30 @@ export class Sim {
       hasReTag: !!this.hoverMgr,
       reTag,
       dock: FT.mcp
-        ? (['mcp', 'db', 'books', 'rec'] as const).map((k) => ({ kind: k, t, short: FT[k].short, tip: DOCK_TIP[k], down: (e: React.PointerEvent) => this.dockDown(e, k) }))
+        ? (['mcp', 'db', 'books', 'rec'] as const).map((k) => ({
+            kind: k,
+            t,
+            short: FT[k].short,
+            tip: DOCK_TIP[k],
+            // U15/T6: keyboard access -- Enter/Space drops the tool near center, same as tapping it in the phone sheet.
+            ariaLabel: FT[k].name + ' tool',
+            activate: () => this.placeFurnFromSheet(k),
+            down: (e: React.PointerEvent) => this.dockDown(e, k),
+          }))
         : [],
       dockX: vw - this.feedW() < 700 ? (vw - this.feedW()) / 2 : Math.max(290 + 200, (vw - this.feedW()) / 2 + 40),
       ctrlBottom: vw - this.feedW() < 700 ? 128 : 18,
+      phoneMoodOpen: this.phoneMoodOpen,
+      openPhoneMood: () => this.openPhoneMood(),
+      closePhoneMood: () => this.closePhoneMood(),
+      phoneAddOpen: this.phoneAddOpen,
+      openPhoneAdd: () => this.openPhoneAdd(),
+      closePhoneAdd: () => this.closePhoneAdd(),
+      showAddSheetToolsTip: this.showAddSheetToolsTip,
+      showAddSheetRecorderTip: this.showAddSheetRecorderTip,
+      placeFromSheet: (k: Furniture['type']) => this.placeFurnFromSheet(k),
+      needsCount: this.visibleNeeds().length,
+      openPipNeeds: () => this.openPipNeeds(),
       addTarget: tgt.name,
       addMgr: () => this.addManager(tgt.id),
       addTeam: () => this.addTeam(tgt.id),
@@ -1796,7 +2165,8 @@ export class Sim {
         return T && T.state === 'active';
       }).length,
       teamCount: m.teams.filter((T) => T.state === 'active').length,
-      mgrCount: Object.keys(S).length,
+      // V1: PIP is the prime supervisor, not a "manager" — don't count her.
+      mgrCount: Object.keys(S).length - 1,
       furnCount: m.furn.length,
       zoomPct: Math.round(z * 100),
       zoomIn: () => {
@@ -1832,7 +2202,10 @@ export class Sim {
         this.disp = {};
         this.evLog = [];
         this.resetConfirm = false;
+        this.phoneColumnLayout = false;
         this.introOn = true;
+        this.vicNotes = [];
+        this.thinking = false;
         this.introPhase = 'sleep';
         this.pipAsleep = true;
         this.tourOn = false;
@@ -1847,10 +2220,16 @@ export class Sim {
       },
       liveOp: 0.5 + 0.5 * Math.abs(Math.sin(t * 2)),
       cards,
+      doneCards,
+      doneCount: doneCards.length,
+      pinnedAsks,
       hasPop: !!pop,
       pop: pop || {},
       closePop: () => {
         this.sel = null;
+        // Phone: the bottom sheet covers ~55% of the screen; closing it can reveal a
+        // team box sitting clipped at the edge from before the sheet opened.
+        if (typeof window !== 'undefined' && window.innerWidth < 560) this.fitView();
         this.notify();
       },
     };

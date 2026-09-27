@@ -1,96 +1,58 @@
 import type { Agent, Furniture, Manager, Need, Team, WorldModel } from './types';
+import { CURRENT_V } from './constants';
 
 type SupSeed = [string, string, string, number, number, number, string | null];
 type AgentSeed = [string, string, string | null, string[], string[], Partial<Agent>?];
 type TeamSeed = [string, string, string, number, number, Team['state'], string[], AgentSeed[]];
 
 export const SUPS: SupSeed[] = [
-  ['pip', 'PIP', 'PRIME SUPERVISOR', 540, 115, 58, null],
-  ['ada', 'ADA', 'CAPITAL', 290, 385, 42, 'pip'],
-  ['otto', 'OTTO', 'HOME & LIFE', 790, 385, 42, 'pip'],
+  ['pip', 'VIC', 'CHIEF OF STUFF', 540, 115, 58, null],
+  ['dash', 'DASH', 'WORK', 300, 385, 42, 'pip'],
+  ['otto', 'OTTO', 'HOME & MONEY', 780, 385, 42, 'pip'],
 ];
 
 export const TEAMS: TeamSeed[] = [
   [
-    'sched', 'SCHEDULE', 'pip', 130, 250, 'active',
-    ['Tidy next week’s calendar', 'Confirm tomorrow’s appointments', 'Prep notes for the next call'],
+    'job', 'JOB HUNT', 'dash', 150, 650, 'active',
+    ['Search 3 job boards for roles that fit you', 'Rank the 12 against your must-haves', 'Tailor your resume for the top pick'],
     [
-      ['CAL', 'calendar', 'Move Thursday’s dentist to 8:30am', ['Find a slot for the quarterly review', 'Block focus time next week'], ['Confirm the 4:00pm supplier meeting']],
-      ['BRIEF', 'meeting prep', 'Pull 5 bullets for the supplier meeting', ['Draft the Monday standup agenda'], ['Summarize last week’s calls']],
+      ['SCOUT', 'search', 'Search 3 job boards for roles that fit you', [], ['Found 12 new postings overnight']],
+      ['FIT', 'ranking', null, ['Rank the 12 against your must-haves'], ['Dropped 5 that need a security clearance']],
+      ['PEN', 'applications', null, ['Tailor your resume for the top pick'], ['Drafted a cover letter for the design role']],
     ],
   ],
   [
-    'fin', 'FINANCE', 'ada', 120, 650, 'active',
-    ['Reconcile this week’s transactions', 'Check for new recurring charges', 'Update the savings tracker'],
+    'inbox', 'INBOX', 'dash', 450, 790, 'active',
+    ['Clear this morning’s inbox', 'Draft replies to 5 open threads', 'Find a slot for the dentist'],
     [
-      ['TALLY', 'bookkeeping', 'Categorize 38 September receipts', ['Reconcile the business card statement'], ['Upload monthly revenue files to Drive']],
-      ['PENNY', 'budgets', 'Compare savings vs. last month', ['Flag subscriptions unused for 60 days'], ['Set the October grocery budget']],
-      ['CHECK', 'audits', 'Scan the Amex bill for duplicate charges', ['Archive 2025 invoices'], ['Get a $42 double charge refunded'], { blocked: { text: 'the Amex login expired', fix: 'RE-AUTH AMEX' } }],
-      ['NOVA', 'forecasts', 'Project Q4 cash flow', ['Model the new car payment', 'Forecast holiday spending', 'Stress-test a 3-month income dip', 'Compare mortgage refi offers', 'Plan the Q1 tax set-aside'], ['Refresh the runway sheet']],
+      ['SORT', 'triage', 'Clear this morning’s inbox', [], ['Filed 20 emails into folders']],
+      ['REPLY', 'drafts', null, ['Draft replies to 5 open threads'], ['Answered the landlord’s question']],
+      ['CAL', 'calendar', null, ['Find a slot for the dentist'], ['Moved Thursday’s call to 3pm']],
     ],
   ],
   [
-    'mkt', 'MARKETS', 'ada', 290, 790, 'active',
-    ['Rebalance toward target weights', 'Scan today’s movers', 'Log yesterday’s trades'],
+    'money', 'MONEY', 'otto', 660, 650, 'active',
+    ['Pay the electric bill before Friday', 'Check for subscriptions you don’t use', 'Scan this week’s card charges'],
     [
-      ['QUANT', 'trading', 'Watch BTC for the rebalance trigger', ['Backtest the weekly DCA plan'], ['Close the ETH position for +$150'], { flowSeed: true }],
-      ['SCOUT', 'research', 'Read this week’s 3 earnings calls', ['Shortlist dividend ETFs'], ['Send the Friday market digest']],
-      ['HEDGE', 'risk', 'Set stop-losses on new positions', ['Review the portfolio risk score'], ['Trim tech exposure to 30%']],
+      ['BILLS', 'payments', 'Pay the electric bill before Friday', [], ['Paid the internet bill on time']],
+      ['SUBS', 'subscriptions', null, ['Check for subscriptions you don’t use'], ['Found 2 unused subscriptions, $24 a month']],
+      ['WATCH', 'charges', null, ['Scan this week’s card charges'], ['Caught a double charge at the gas station']],
     ],
   ],
   [
-    'fam', 'FAMILY', 'otto', 630, 650, 'active',
-    ['Check the school newsletter', 'Sync the family calendar', 'Restock household basics'],
+    'home', 'HOME', 'otto', 960, 790, 'active',
+    ['Book the kids’ checkups', 'Reorder the weekly groceries', 'Get 3 quotes for the leaky faucet'],
     [
-      ['SCHOOL', 'school', 'Package test results for the school portal', ['Book a parent-teacher slot'], ['Pay the field trip fee']],
-      ['NEST', 'home', 'Plan Saturday’s birthday party', ['Order a gift for grandma'], ['Book the bounce house']],
-      ['CARE', 'health', 'Refill the allergy prescription', ['Schedule annual checkups'], ['Renew the library cards']],
-    ],
-  ],
-  [
-    'pets', 'PETS', 'otto', 795, 790, 'active',
-    ['Log today’s walks', 'Check flea treatment timing', 'Reorder treats'],
-    [
-      ['VET', 'health', 'Confirm tomorrow’s 9:00am vet visit', ['Compare pet insurance plans'], ['Log the rabies vaccine date']],
-      ['CHOW', 'food', null, [], ['Reorder dog food', 'Switch to grain-free kibble']],
-    ],
-  ],
-  [
-    'ins', 'INSURANCE', 'pip', 950, 250, 'active',
-    ['Check for policy updates', 'Review open claim status', 'Compare renewal quotes'],
-    [
-      ['POLICY', 'coverage', 'Read the car policy renewal terms', ['Check home coverage limits'], ['File the windshield claim']],
-      ['QUOTE', 'shopping', 'Collect 3 competing car quotes', ['Estimate a home + auto bundle'], ['Save renewal dates to the calendar'], { fear: 'sending your details to 3 insurers' }],
-    ],
-  ],
-  [
-    'tax', 'TAXES', 'ada', 455, 650, 'hidden',
-    ['Log new deductible expenses', 'Check estimated payment status', 'Sort receipts by category'],
-    [
-      ['DEDUCT', 'deductions', 'Map last year’s tax spend', ['Scan 2025 receipts for deductions'], []],
-      ['FILER', 'filing', 'Set quarterly estimate reminders', ['Collect 1099s as they arrive'], []],
-      ['WRITE', 'write-offs', 'Review the home-office write-off', ['Check retirement contribution limits'], []],
-    ],
-  ],
-  [
-    'groc', 'GROCERY', 'otto', 960, 650, 'pending',
-    ['Build next week’s list', 'Check pantry stock', 'Compare store prices'],
-    [
-      ['LIST', 'planning', 'Build the weekly list from past orders', ['Add Saturday party snacks'], []],
-      ['CART', 'ordering', 'Fill the cart at your usual store', ['Pick a delivery window'], []],
-      ['DEAL', 'savings', 'Clip this week’s coupons', ['Compare prices across 3 stores'], []],
+      ['KIN', 'appointments', 'Book the kids’ checkups', [], ['Renewed the car registration']],
+      ['CART', 'groceries', null, ['Reorder the weekly groceries'], ['Swapped the milk for the brand you like']],
+      ['FIX', 'repairs', null, ['Get 3 quotes for the leaky faucet'], ['Scheduled the AC tune-up']],
     ],
   ],
 ];
 
 export const NEEDS: Need[] = [
-  { id: 'n1', team: 'sched', text: 'Supplier meeting at 4:00pm. I pulled 5 bullets to skim first.', acts: [['OPEN BRIEF', 'ack']], ok: 'Brief opened. Good luck at 4:00.' },
-  { id: 'n6', agent: 'fin-check', team: 'fin', kind: 'blocked', text: 'CHECK is stuck: the Amex login expired.', acts: [['RE-AUTH AMEX', 'unblock'], ['LATER', 'skip']] },
-  { id: 'n7', agent: 'ins-quote', team: 'ins', kind: 'fear', text: 'QUOTE wants your OK before sending your details to 3 insurers.', acts: [['GO AHEAD', 'approve'], ['HOLD OFF', 'hold']] },
-  { id: 'n2', team: 'fam', text: 'Your kid’s test results are packaged for the school portal.', acts: [['UPLOAD', 'ack']], ok: 'Uploaded to the school portal.' },
-  { id: 'n3', team: 'ins', text: 'Car insurance renews soon. Should I message your agent to check rates?', acts: [['YES, DO IT', 'ins'], ['NOT NOW', 'skip']] },
-  { id: 'n4', team: 'tax', text: 'Your tax spend last year was steep. Build a team to monitor it and find optimizations?', acts: [['BUILD TEAM', 'tax'], ['LATER', 'skip']] },
-  { id: 'n5', team: 'groc', text: 'Weekly groceries are one step from automated. I’ll always check with you before checkout.', acts: [['SIGN', 'groc'], ['NOT YET', 'skip']] },
+  { id: 'n1', team: 'money', text: 'BILLS is ready to pay the electric bill before Friday. Go ahead?', acts: [['GO AHEAD', 'ack']], ok: 'Paid the electric bill.' },
+  { id: 'n2', team: 'home', text: 'KIN found a checkup slot for the kids Tuesday at 4pm. Book it?', acts: [['BOOK IT', 'ack']], ok: 'Booked the checkup.' },
 ];
 
 export function seed(): WorldModel {
@@ -119,22 +81,22 @@ export function seed(): WorldModel {
   });
   const d = Date.now();
   const feed: WorldModel['feed'] = [
-    { id: 'f3', kind: 'DONE', path: 'OTTO › PETS', who: 'VET', text: 'Log the rabies vaccine date', ts: d - 60000 },
-    { id: 'f2', kind: 'DONE', path: 'ADA › MARKETS', who: 'QUANT', text: 'Close the ETH position for +$150', ts: d - 180000 },
-    { id: 'f1', kind: 'DONE', path: 'ADA › FINANCE', who: 'TALLY', text: 'Upload monthly revenue files to Drive (via DATABASE)', ts: d - 300000 },
+    { id: 'f3', kind: 'DONE', path: 'OTTO › HOME', who: 'FIX', text: 'Scheduled the AC tune-up', ts: d - 60000 },
+    { id: 'f2', kind: 'DONE', path: 'OTTO › MONEY', who: 'WATCH', text: 'Caught a double charge at the gas station', ts: d - 180000 },
+    { id: 'f1', kind: 'DONE', path: 'DASH › JOB HUNT', who: 'SCOUT', text: 'Found 12 new postings overnight', ts: d - 300000 },
   ];
   const furn: Furniture[] = [
-    { id: 'fx-db', type: 'db', x: -60, y: 650, on: [true, true, false, false] },
-    { id: 'fx-mcp', type: 'mcp', x: 10, y: 130, on: [true, false, true, false, false] },
+    { id: 'fx-db', type: 'db', x: 300, y: 730, on: [true, true, false, false] },
+    { id: 'fx-mcp', type: 'mcp', x: 810, y: 720, on: [true, false, true, false, false] },
   ];
-  return { v: 3, sups, teams, agents, furn, needs: NEEDS.map((n) => ({ ...n })), feed };
+  return { v: CURRENT_V, sups, teams, agents, furn, needs: NEEDS.map((n) => ({ ...n })), feed };
 }
 
 /** The opening screen: PIP alone, nothing hired yet. */
 export function blank(): WorldModel {
   return {
-    v: 3,
-    sups: { pip: { id: 'pip', name: 'PIP', role: 'PRIME SUPERVISOR', x: 540, y: 200, size: 58, boss: null } },
+    v: CURRENT_V,
+    sups: { pip: { id: 'pip', name: 'VIC', role: 'CHIEF OF STUFF', x: 540, y: 200, size: 58, boss: null } },
     teams: [],
     agents: [],
     furn: [],
