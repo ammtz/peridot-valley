@@ -163,7 +163,7 @@ console.log('U8 outro line gone after ~5s:', !(await feedText()).includes("It's 
 
 // U2/U14: the dock only shows post-tour now; on phone it is the "+" button and its
 // sheet carries one-time tips for tools and the recorder (no tour stop teaches them).
-console.log('dock present at end:', MOBILE ? await js("!!document.getElementById('phone-add-btn')") : (await feedText()).includes('TOOLS'));
+console.log('dock present at end:', MOBILE ? await js("!!document.getElementById('phone-add-btn')") : await js("!!(document.getElementById('dock-panel') || document.getElementById('desk-add-btn'))"));
 console.log('feed present at end:', (await feedText()).includes('VIC'));
 if (MOBILE) {
   await js('window.__sim.openPhoneAdd()'); await sleep(300);
@@ -340,7 +340,7 @@ if (!MOBILE) {
     moodChip: !!document.querySelector('[aria-label="Legend and reset"]'),
     fitBtn: !!document.querySelector('[aria-label="Fit view"]'),
     addBtn: !!document.getElementById('phone-add-btn'),
-    feedPill: document.body.innerText.includes('VIC → YOU'),
+    feedPill: !!document.querySelector('[aria-label^="Open VIC"]') || document.body.innerText.includes('VIC → YOU'),
     needsPill: /things? need you|All clear/.test(document.body.innerText),
     liveLineGone: !document.body.innerText.includes('live ·'),
     dockGridGone: !document.getElementById('dock-panel'),
@@ -357,6 +357,23 @@ if (!MOBILE) {
   await js('window.__sim.openPhoneAdd()'); await sleep(300);
   await checkHitTargets('phone + sheet (with tips)');
   await js('window.__sim.closePhoneAdd()'); await sleep(200);
+}
+// 2026-09-27: a team's popup offers + HELPER, and it adds exactly one helper to that team.
+{
+  const before = await js(`(()=>{const s=window.__sim;if(!s.m.teams.some(t=>t.state==='active'))s.skipIntro();const T=s.m.teams.find(t=>t.state==='active');s.sel={kind:'team',id:T.id};s.popAt=0;s.notify();return {id:T.id,n:s.members(T).length};})()`);
+  await sleep(500);
+  const hasBtn = await js(`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='+ HELPER')`);
+  await clickByText('+ HELPER'); await sleep(500);
+  const after = await js(`window.__sim.members(window.__sim.team(${JSON.stringify(before.id)})).length`);
+  console.log('team popup has + HELPER and it adds one helper:', hasBtn && after === before.n + 1, JSON.stringify({ before: before.n, after }));
+}
+// 2026-09-27: on desktop/tablet the zoom row, the needs pill and the dock never overlap.
+if (!MOBILE) {
+  const clash = await js(`(()=>{const bar=document.querySelector('[data-control-bar]');if(!bar)return 'no bar';
+    const kids=[...bar.children].map(c=>c.firstElementChild).filter(Boolean).map(e=>e.getBoundingClientRect()).filter(r=>r.width>0);
+    for(let i=0;i<kids.length;i++)for(let j=i+1;j<kids.length;j++){const a=kids[i],b=kids[j];if(a.left<b.right&&b.left<a.right&&a.top<b.bottom&&b.top<a.bottom)return 'overlap';}
+    return 'clear';})()`);
+  console.log('desktop control bar: zoom, pill and dock do not overlap:', clash === 'clear', clash);
 }
 console.log('errors:', errors.length ? errors : 'none');
 ws.close(); edge.kill();
