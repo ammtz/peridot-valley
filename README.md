@@ -1,106 +1,99 @@
-# Peridot Valley
+# 🏞️ Peridot Valley
 
-**Your AI helpers, as a little town you can actually see.**
+**Build and manage your agentic system, visually.**
 
-Most AI setups are a wall of logs. You find out an agent was stuck three hours
-after it got stuck. Peridot Valley is a bet that a team of agents should look
-more like a team: small square creatures at desks, reporting up to managers,
-reporting up to you.
+**Live demo: [peridot-valley.vercel.app](https://peridot-valley.vercel.app)** · no sign-up · works on phones
 
-At a glance you can tell who is in flow, who is swamped, who is waiting on your
-OK and who is bored out of their mind. Drag a team under a different manager
-and the org chart changes. Drop a database next to a team and they start using
-it. Tap anyone to see what they're doing.
+---
 
-## What this is, honestly
+You have an idea. You hand it to your AI agents, and they take it into the dark.
 
-**An early demo. Everything you see is simulated.**
+Four hours and 50,000 tokens later, they bring back something you don't recognize. You never saw where it went wrong.
 
-No agent here does real work yet. There is no server, no API key and no
-account. The creatures run on a small simulation in your browser, and your
-changes are saved in your browser's local storage. Close the tab, come back,
-and your valley is where you left it. Press **RESET** to start over.
+Now turn the lights on.
 
-We built the look and the feel first on purpose. If watching your agents isn't
-clear and a little delightful, wiring them to real work won't fix that.
+There's a valley. Every agent has a home. Every team has a street. The one who's stuck is waving at you.
 
-## Where it's going
+And you're not just watching. Reach in. Move a team. Hand someone a tool.
 
-The real valley: the same town, with agents doing real jobs behind each
-creature. When one gets stuck, you'll see it the moment it happens, not in a
-log file. When one needs your permission, it asks in plain words and waits.
-Every decision you make is kept, so the system learns how you like things done.
+Welcome to Peridot Valley.
 
-It's early, and it's moving fast. Expect things to change, sometimes a lot,
-between visits.
+---
 
-## Try it
+## Why a valley?
 
-**Live demo: [peridot-valley.vercel.app](https://peridot-valley.vercel.app)** — no sign-up, works on your phone.
+**Your whole agentic system on one screen. No dashboard.**
 
-To run it yourself:
+No tabs, no settings panels, no buttons three menus deep.
+Everything you do, you do in the valley itself.
+
+- **See your system.** Every team, manager and agent, laid out.
+- **Spot who's stuck.** One glance, no logs.
+- **Place context.** Drop DATA or NOTES beside a team.
+- **Record anywhere.** Put a RECORDER where you want recaps.
+- **Drag tools.** In to grant, out to revoke.
+
+## Try it: the 60-second tour
+
+> Interface preview. All agent work is simulated.
+
+1. **Open the demo.** VIC, the supervisor, asks two questions.
+2. **Answer them.** How often to check in, what to offload first.
+3. **Meet your team.** One manager, three helpers, hired for you.
+4. **Find a red !** Tap it. That agent is stuck.
+5. **Drag a team** onto another manager. The org chart follows.
+6. **Drop a RECORDER** near a team. A recap posts every 45 seconds.
+
+Want the full valley? Use the skip link on the opening screen.
+It hires two managers and plays a scripted morning.
+
+Sending it to someone? Add `?fresh` to replay the opening.
+
+**Controls:** tap to inspect · drag to reorganize · hold a dock tool to preview · pinch or Ctrl+scroll to zoom · **F** fits all.
+
+Your valley saves in your browser. **RESET** starts over.
+
+## Reading the valley
+
+| Color | Mood | Meaning |
+|---|---|---|
+| Green ✦ | Flowing | Finishing tasks back to back |
+| Orange | Swamped | Too much on their plate |
+| Yellow ? | Unsure | Waiting for your OK |
+| Red ! | Stuck | Blocked until you step in |
+| Grey z | Bored | Idle, give them work |
+
+## Coming next
+
+We built the look first on purpose.
+If watching agents isn't clear, real work won't fix it.
+
+- **Real agents, real jobs,** behind every creature.
+- **Plain-word permission requests.** They ask, then wait.
+- **A valley that learns you.** Every decision you make is kept.
+
+Expect big changes between visits.
+
+## Run it locally
 
 ```bash
 npm install
-npm run dev
+npm run dev       # open the printed link
+npm run build     # type-check and build to dist/
+npm run preview   # serve the build locally
 ```
 
-Then open the link it prints. Works with a mouse or a phone.
+Deploy: import to Vercel, pick the **Vite** preset, deploy.
 
-**What happens when you open it**
+## Architecture
 
-PIP, the supervisor, wakes up and asks you two questions: whether your helpers
-should check with you first, and what to take off your plate first — job
-hunt, inbox & calendar, money & bills, or home & family. Your answer hires one
-manager running one team of 3 helpers. A one-minute tour covers the rest.
-Want the full valley without the questions? There's a skip link — it hires
-DASH (job hunt, inbox) and OTTO (money, home) and plays a short scripted
-morning before the sim settles into its normal, calmer pace.
+Vite, React and TypeScript. No UI framework, no backend.
+One animation loop runs the whole world.
 
-**Then try this**
-
-- Tap anyone to see what they're working on. Red **!** means stuck: fix it.
-- Drag a team onto a different manager to re-organise.
-- Hold a tool in the bottom dock (TOOLS, DATA, NOTES, RECORDER) to see what it
-  does, then drag it next to a team.
-- Drop a **RECORDER** near a team. Every "10 minutes" (45 seconds, demo time)
-  it posts a recap of what they did, what got stuck and what's waiting on you.
-- Pinch or Ctrl+scroll to zoom. Press **F** to fit everything on screen.
-
-Sending this to someone? Add `?fresh` to the link and they'll get the opening
-even if they've been here before.
-
-## The moods
-
-| Colour | Mood | What it means |
-|---|---|---|
-| Green ✦ | Flow | Finishing things back to back |
-| Orange | Swamped | Too much on their plate |
-| Yellow ? | Unsure | Waiting for your OK before doing something |
-| Red ! | Stuck | Blocked, and needs you to unblock it |
-| Grey z | Bored | Nothing to do. Give them something |
-
-## Under the hood
-
-A static site, and deliberately small: Vite, React and TypeScript, with no UI
-framework and no backend. The whole world runs on one animation loop.
-
-- `src/model/` has the simulation, the starting world and the org rules.
-- `src/world/` draws the town. `src/ui/` holds the popups, the feed and the dock.
-- `docs/handoff/` has the original design spec and the prototype it was built
-  from.
-- `_qa/drive.mjs` is a headless smoke test. It taps, drags, reloads and checks
-  for errors in headless Edge (Windows paths for now).
-
-```bash
-npm run build     # type-check and build into dist/
-npm run preview   # serve the built site locally
-```
-
-Deploys as a plain static site. On Vercel, import the repo, pick the **Vite**
-preset and click Deploy. No settings needed.
-
-## Feedback
-
-This is the part where you tell us what's confusing. Open an issue. We read
-them.
+| Path | Holds |
+|---|---|
+| `src/model/` | Simulation, starting world, org rules |
+| `src/world/` | Town rendering |
+| `src/ui/` | Popups, feed, dock |
+| `docs/handoff/` | Original design spec and prototype |
+| `_qa/drive.mjs` | Headless smoke test (Edge, Windows paths for now) |
