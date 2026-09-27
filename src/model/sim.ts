@@ -115,6 +115,8 @@ export class Sim {
   renderTicks = 0;
   /** U15/T6: prefers-reduced-motion -- speech shows instantly, bob/pulse/aura stop. */
   reducedMotion = false;
+  /** FIX1: true once layoutPhoneColumn() has reflowed the org into a scrollable column. */
+  phoneColumnLayout = false;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -193,6 +195,7 @@ export class Sim {
     this.introPhase = null;
     this.tourOn = false;
     this.pipAsleep = false;
+    this.phoneColumnLayout = false;
     this.dirty = true;
     if (!this.m.storyDone) this.startStory();
     this.save();
@@ -587,16 +590,56 @@ export class Sim {
       ah = Math.max(200, vh - topInset - bottomInset);
     const bw = x1 - x0,
       bh = y1 - y0;
+    const phone = typeof window !== 'undefined' && vw < 560;
+    // FIX1: once the org has been reflowed into a scrollable column (it doesn't fit
+    // any other way on this screen), a generic fit must not try to squeeze the whole
+    // tall column into view -- that's exactly what the column was reflowed to avoid.
+    if (phone && this.phoneColumnLayout) {
+      const z = Math.max(cl(aw / bw, 0.3, maxZoom), 0.7);
+      this.zoom = z;
+      this.pan = { x: 30 + (aw - bw * z) / 2 - x0 * z, y: topInset - y0 * z };
+      return;
+    }
     let z = cl(Math.min(aw / bw, ah / bh), 0.3, maxZoom);
     // Phones: never open on a squint. A crowded valley can compute below 0.7 to fit
     // everything, but readable beats complete on a screen this small.
-    if (typeof window !== 'undefined' && window.innerWidth < 560) z = Math.max(z, 0.7);
+    if (phone) z = Math.max(z, 0.7);
     this.zoom = z;
     this.pan = { x: 30 + (aw - bw * z) / 2 - x0 * z, y: topInset + (ah - bh * z) / 2 - y0 * z };
   }
-  /** Center PIP plus the first hired manager's floors — used after a phone skip, where fitting
-   *  the whole org at once would zoom out past readable. */
-  centerOnOrgTop(bottomInset: number, maxZoom: number) {
+  /** FIX1: on phone, stack each manager's teams in a vertical column under it (PIP,
+   *  then each manager and its teams in turn), so the org reads top to bottom and
+   *  the user pans down to see the rest instead of everything getting cropped or
+   *  squinted at. Only used when the whole org doesn't fit even at the 0.55 floor. */
+  layoutPhoneColumn() {
+    this.phoneColumnLayout = true;
+    const m = this.m;
+    const cx = m.sups.pip.x;
+    const GAP = 40;
+    let cursor = m.sups.pip.y + 90;
+    Object.keys(m.sups)
+      .filter((id) => id !== 'pip')
+      .forEach((mid) => {
+        const mgr = m.sups[mid];
+        cursor += 90;
+        mgr.x = cx;
+        mgr.y = cursor;
+        cursor += 90 + GAP;
+        m.teams
+          .filter((T) => T.boss === mid && T.state !== 'hidden')
+          .forEach((T) => {
+            const n = this.members(T).length,
+              h = roomH(n);
+            T.x = cx;
+            T.y = cursor + h / 2;
+            cursor += h + GAP;
+          });
+        cursor += GAP;
+      });
+  }
+  /** Bounding box over PIP, every manager and every team floor (FIX1: the whole org,
+   *  not just the first manager's). Shared by centerOnOrgTop's fit attempts. */
+  private orgBounds() {
     const m = this.m;
     let x0 = 1e9,
       y0 = 1e9,
@@ -608,30 +651,47 @@ export class Sim {
       x1 = Math.max(x1, c);
       y1 = Math.max(y1, d);
     };
-    const pip = m.sups.pip;
-    add(pip.x - 60, pip.y - 60, pip.x + 60, pip.y + 70);
-    const firstMgrId = Object.keys(m.sups).find((id) => id !== 'pip');
-    if (firstMgrId) {
-      const mgr = m.sups[firstMgrId];
-      add(mgr.x - 60, mgr.y - 60, mgr.x + 60, mgr.y + 70);
-      m.teams
-        .filter((T) => T.boss === firstMgrId && T.state !== 'hidden')
-        .forEach((T) => {
-          const n = this.members(T).length,
-            w = roomW(n),
-            h = roomH(n);
-          add(T.x - w / 2, T.y - h / 2 - 30, T.x + w / 2, T.y + h / 2);
-        });
-    }
+    Object.values(m.sups).forEach((s) => add(s.x - 60, s.y - 60, s.x + 60, s.y + 70));
+    m.teams.forEach((T) => {
+      if (T.state === 'hidden') return;
+      const n = this.members(T).length,
+        w = roomW(n),
+        h = roomH(n);
+      add(T.x - w / 2, T.y - h / 2 - 30, T.x + w / 2, T.y + h / 2);
+    });
+    return { x0, y0, x1, y1 };
+  }
+  /** Frame the whole org (PIP, every manager, every team) centered horizontally --
+   *  used after a phone skip. Tries a readable zoom (>=0.7) first, then a 0.55 floor
+   *  rather than crop a team, and only reflows into a scrollable vertical column
+   *  (layoutPhoneColumn) when even that doesn't fit without cropping. */
+  centerOnOrgTop(bottomInset: number, maxZoom: number) {
     const vw = window.innerWidth,
       vh = window.innerHeight;
     const topInset = 74;
     const aw = Math.max(200, vw - this.feedW() - 60),
       ah = Math.max(200, vh - topInset - bottomInset);
-    const bw = x1 - x0,
+    const phone = typeof window !== 'undefined' && vw < 560;
+    let { x0, y0, x1, y1 } = this.orgBounds();
+    let bw = x1 - x0,
       bh = y1 - y0;
     let z = cl(Math.min(aw / bw, ah / bh), 0.3, maxZoom);
-    if (typeof window !== 'undefined' && window.innerWidth < 560) z = Math.max(z, 0.7);
+    if (phone && z < 0.7) {
+      if (bw * 0.55 <= aw && bh * 0.55 <= ah) {
+        z = 0.55;
+      } else {
+        // Even the floor crops something -- reflow to a column and fit its width only;
+        // the column is taller than the viewport by design, so the user pans down.
+        this.layoutPhoneColumn();
+        ({ x0, y0, x1, y1 } = this.orgBounds());
+        bw = x1 - x0;
+        bh = y1 - y0;
+        z = Math.max(cl(aw / bw, 0.3, maxZoom), 0.7);
+        this.zoom = z;
+        this.pan = { x: 30 + (aw - bw * z) / 2 - x0 * z, y: topInset - y0 * z };
+        return;
+      }
+    }
     this.zoom = z;
     this.pan = { x: 30 + (aw - bw * z) / 2 - x0 * z, y: topInset + (ah - bh * z) / 2 - y0 * z };
   }
@@ -639,17 +699,32 @@ export class Sim {
   centerOnTeam(teamId: string, bottomInset: number, maxZoom: number) {
     const T = this.team(teamId);
     if (!T) return;
+    // FIX2: frame the team together with its manager, so the manager's head and
+    // label land inside the view instead of under the title bar.
     const n = this.members(T).length,
-      w = roomW(n) + 90,
-      h = roomH(n) + 90;
+      rw = roomW(n),
+      rh = roomH(n);
+    let x0 = T.x - rw / 2 - 45,
+      y0 = T.y - rh / 2 - 60,
+      x1 = T.x + rw / 2 + 45,
+      y1 = T.y + rh / 2 + 45;
+    const mgr = this.m.sups[T.boss];
+    if (mgr && mgr.id !== 'pip') {
+      x0 = Math.min(x0, mgr.x - 70);
+      x1 = Math.max(x1, mgr.x + 70);
+      y0 = Math.min(y0, mgr.y - 70);
+    }
+    const w = x1 - x0,
+      h = y1 - y0;
     const vw = window.innerWidth,
       vh = window.innerHeight;
-    const topInset = 74;
+    // Keep world objects clear of the title bar plus an 8px margin.
+    const topInset = 74 + 8;
     const aw = Math.max(200, vw - this.feedW() - 60),
       ah = Math.max(200, vh - topInset - bottomInset);
     const z = cl(Math.min(aw / w, ah / h), 0.3, maxZoom);
     this.zoom = z;
-    this.pan = { x: 30 + (aw - w * z) / 2 - (T.x - w / 2) * z, y: topInset + (ah - h * z) / 2 - (T.y - h / 2) * z };
+    this.pan = { x: 30 + (aw - w * z) / 2 - x0 * z, y: topInset + (ah - h * z) / 2 - y0 * z };
   }
   /** Bottom inset (px) to keep the world clear of the speech card. Both tour stops use the same one now that U14 dropped the dock-height stops. */
   tourBottomInset() {
@@ -2092,6 +2167,7 @@ export class Sim {
         this.disp = {};
         this.evLog = [];
         this.resetConfirm = false;
+        this.phoneColumnLayout = false;
         this.introOn = true;
         this.introPhase = 'sleep';
         this.pipAsleep = true;
