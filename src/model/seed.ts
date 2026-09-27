@@ -6,7 +6,7 @@ type AgentSeed = [string, string, string | null, string[], string[], Partial<Age
 type TeamSeed = [string, string, string, number, number, Team['state'], string[], AgentSeed[]];
 
 export const SUPS: SupSeed[] = [
-  ['pip', 'PIP', 'PRIME SUPERVISOR', 540, 115, 58, null],
+  ['pip', 'VIC', 'CHIEF OF STUFF', 540, 115, 58, null],
   ['dash', 'DASH', 'WORK', 300, 385, 42, 'pip'],
   ['otto', 'OTTO', 'HOME & MONEY', 780, 385, 42, 'pip'],
 ];
@@ -96,7 +96,7 @@ export function seed(): WorldModel {
 export function blank(): WorldModel {
   return {
     v: CURRENT_V,
-    sups: { pip: { id: 'pip', name: 'PIP', role: 'PRIME SUPERVISOR', x: 540, y: 200, size: 58, boss: null } },
+    sups: { pip: { id: 'pip', name: 'VIC', role: 'CHIEF OF STUFF', x: 540, y: 200, size: 58, boss: null } },
     teams: [],
     agents: [],
     furn: [],

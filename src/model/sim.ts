@@ -174,18 +174,37 @@ export class Sim {
     this.speechAt = NOW() - this.speechText.length / 40 - 0.05;
   }
 
+  /** Vic's notebook: one line per onboarding answer, shown on the intro card. */
+  vicNotes: string[] = [];
+  /** True while Vic "thinks" between questions; the answer buttons stay hidden. */
+  thinking = false;
+  private thinkTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Pause after an answer, as if Vic were writing it down, then run `next`. */
+  private thinkThen(next: () => void) {
+    this.thinking = true;
+    if (this.thinkTimer) clearTimeout(this.thinkTimer);
+    // Let the acknowledgement finish typing, then hold for a beat with the dots showing.
+    const ms = this.reducedMotion ? 300 : (this.speechText.length / 40) * 1000 + 1300;
+    this.thinkTimer = setTimeout(() => {
+      this.thinking = false;
+      this.thinkTimer = null;
+      next();
+      this.notify();
+    }, ms);
+  }
+
   // --- opening ---
   wake() {
     if (this.introPhase !== 'sleep') return;
     this.pipAsleep = false;
     this.introPhase = 'greet';
-    this.setSpeech("Hi. I'm PIP. I run a team of helpers so you don't have to watch them. Two questions, and I'll hire your first team.");
+    this.setSpeech("Good morning. I'm Vic, your chief of staff. Two questions, and I'll have your first team at work.");
     this.notify();
   }
   advanceGreet() {
     if (this.introPhase !== 'greet') return;
     this.introPhase = 'q1';
-    this.setSpeech('Should they check with you before anything important?');
+    this.setSpeech('Should my staff consult you directly for approvals, or shall I handle those decisions for you?');
     this.notify();
   }
   skipIntro() {
@@ -207,8 +226,12 @@ export class Sim {
     this.askFirst = ask;
     this.pendingContext = ask;
     this.fearMult = ask ? 2 : 0.5;
-    this.introPhase = 'q2';
-    this.setSpeech('What should your helpers take off your plate first?');
+    this.vicNotes.push(ask ? 'Approvals: you decide' : 'Approvals: Vic decides, tells you after');
+    this.setSpeech(ask ? 'Very good. Approvals will come to you.' : "Understood. I'll decide, and tell you afterwards.");
+    this.thinkThen(() => {
+      this.introPhase = 'q2';
+      this.setSpeech('Which part of your day shall I take off your hands first?');
+    });
     this.notify();
   }
   q2Options(): [string, string][] {
@@ -219,8 +242,13 @@ export class Sim {
     this.hireQueue = preset.managers;
     this.hireIndex = 0;
     this.anyHired = false;
-    this.introPhase = 'hiring';
-    this.setSpeech("Here's who I'd hire.");
+    const label = (Q2_OPTIONS.find(([k]) => k === focusKey) || Q2_OPTIONS[0])[1];
+    this.vicNotes.push('First job: ' + label.toLowerCase());
+    this.setSpeech('Noted. I have a team in mind for that.');
+    this.thinkThen(() => {
+      this.introPhase = 'hiring';
+      this.setSpeech("Here's who I'd hire, and how they'd work.");
+    });
     this.notify();
   }
   currentHire() {
@@ -274,7 +302,7 @@ export class Sim {
     this.hireIndex++;
     this.renaming = false;
     if (this.hireIndex >= this.hireQueue.length && !this.anyHired) {
-      this.setSpeech("Fine, I'll start small.");
+      this.setSpeech("Of course. We'll start small.");
       this.hireIndex = 0;
       this.placeManagerAndTeams(this.hireQueue[0], this.hireQueue[0].name);
       this.hireIndex = 1;
@@ -286,7 +314,7 @@ export class Sim {
       this.introPhase = 'addteam';
       this.addTeamCount = 0;
       this.addTeamValue = '';
-      this.setSpeech('Want to add your own?');
+      this.setSpeech("Anything else you'd like a team for?");
     } else {
       const nx = this.currentHire()!;
       this.setSpeech(nx.name + ' would run ' + nx.runs + ' — ' + plural(nx.teams.length, 'team') + ', ' + plural(helperCount(nx), 'helper'));
@@ -317,7 +345,7 @@ export class Sim {
     genericAgents().forEach((a) => {
       m.agents.push({ id: id + '-' + a.n.toLowerCase(), name: a.n, role: a.role, team: id, doing: a.doing, backlog: a.backlog.slice(), done: a.done.slice(), blocked: null, fear: null });
     });
-    this.card('ORG', name.toUpperCase(), '', 'New team under PIP. Drag agents in any time.');
+    this.card('ORG', name.toUpperCase(), '', 'New team under VIC. Drag agents in any time.');
     this.addTeamCount++;
     this.addTeamValue = '';
     this.dirty = true;
@@ -338,7 +366,7 @@ export class Sim {
     this.tourStepStart = NOW();
     this.tourWaiting = false;
     this.fitView(this.tourBottomInset(), 1.15);
-    this.setSpeech('Everyone reports up. When someone finishes a job, it travels the lines to me, and I tell you.');
+    this.setSpeech('Everyone reports up to me. When work is finished, it travels these lines and I tell you.');
     this.forceCompletionForTour();
     this.notify();
   }
@@ -366,7 +394,7 @@ export class Sim {
     if (this.tourStep === 0) {
       this.tourStep = 1;
       this.tourStepStart = NOW();
-      this.setSpeech('Colours are moods. Green is flow, orange is swamped, red means stuck. One of them is stuck right now. Tap them.');
+      this.setSpeech('Colour shows how each helper is doing, and red means stuck. One is stuck now; tap it to step in.');
       this.forceBlockForTour();
     } else if (this.tourStep === 1) {
       this.tourEnd();
@@ -375,13 +403,14 @@ export class Sim {
     this.notify();
   }
   tourAdvanceAfterFix() {
-    this.setSpeech("That's the job. You only step in when it matters.");
+    this.setSpeech("That's the whole job. You step in only when it matters.");
   }
   tourEnd() {
     this.tourOn = false;
     this.tourStep = 0;
     this.m.onboarded = true;
-    this.setSpeech("It's yours now. Drag anything, rename anything, hire more from the dock. I'll be up here.");
+    const phone = typeof window !== 'undefined' && window.innerWidth < 560;
+    this.setSpeech(phone ? "It's yours now. Tap + to add teams; I'll be up here." : "It's yours now. Hire more from the dock; I'll be up here.");
     this.dirty = true;
     // Phone: the tour left the camera framed on its last stop. Refit so nothing
     // sits clipped at the screen edge once the chrome (dock, feed) settles back in.
@@ -422,7 +451,7 @@ export class Sim {
       this.storyBillsStuckDone = true;
       if (bills) {
         this.makeBlocked(bills);
-        this.card('PIP', this.pathName('money'), 'PIP', ' noticed within 2 seconds. Tap BILLS to fix it.');
+        this.card('VIC', this.pathName('money'), 'VIC', ' noticed within 2 seconds. BILLS needs you for the bank login.');
       }
     }
     const fixed = !bills || !bills.blocked;
@@ -440,6 +469,12 @@ export class Sim {
    *  the next save() writes the new shape. An old (v3) save from the live site must
    *  load without throwing -- this is the one place allowed to assume a field is missing. */
   migrate(s: WorldModel) {
+    // PIP was renamed VIC (Chief of Stuff) on 2026-09-27; older saves still carry the old name.
+    const chief = s.sups && s.sups.pip;
+    if (chief && chief.name === 'PIP') {
+      chief.name = 'VIC';
+      chief.role = 'CHIEF OF STUFF';
+    }
     if (s.v >= CURRENT_V) return;
     // v3 -> v4 (demo-v2): Need.snoozeUntil (U6, LATER) is new and optional -- a v3
     // save simply won't have the key, which is already a valid "not snoozed" state,
@@ -1278,7 +1313,7 @@ export class Sim {
     // "No, just handle it" — PIP resolves most asks itself instead of interrupting you.
     const state: DecideState = { askFirst: this.askFirst, agentName: a.name, team: a.team };
     if (decide('handleOrAsk', state, ['handled', 'ask']) === 'handled') {
-      this.card('HANDLED', this.pathName(a.team), 'PIP', ' handled it: ' + a.name + ' skipped ' + f + '.');
+      this.card('HANDLED', this.pathName(a.team), 'VIC', ' handled it: ' + a.name + ' skipped ' + f + '.');
       this.evLog.push({ t: NOW(), team: a.team, kind: 'fear', who: a.name, text: f });
       this.complete(a, NOW());
       return;
@@ -1476,7 +1511,7 @@ export class Sim {
                 : [];
       p.hasMoodActs = p.moodActs.length > 0;
       p.secs = this.secs(t, a.doing ? [{ text: a.doing }] : [], a.backlog.map((x) => ({ text: x })), a.done.slice(0, 4).map((x) => ({ text: x })));
-      p.hint = pend ? 'Waiting on your signature. Open PIP to sign.' : 'Drag me onto another floor to reassign.';
+      p.hint = pend ? 'Waiting on your signature. Open VIC to sign.' : 'Drag me onto another floor to reassign.';
     } else if (sel.kind === 'team') {
       const T = this.team(sel.id);
       if (!T) return null;
@@ -1485,7 +1520,7 @@ export class Sim {
       wy = T.y;
       r = roomW(mem.length) / 2;
       p.title = T.name;
-      p.sub = (this.chain(T.boss).join(' › ') || 'PIP') + ' · ' + plural(mem.length, 'agent');
+      p.sub = (this.chain(T.boss).join(' › ') || 'VIC') + ' · ' + plural(mem.length, 'agent');
       p.hasEdit = true;
       p.nameVal = T.name;
       p.onName = (v: string) => {
@@ -1518,7 +1553,7 @@ export class Sim {
       });
       if (mem.length) p.secs = this.secs(t, doing, backlog, done.slice(0, 6));
       if (!mem.length) p.acts = [btn('DELETE FLOOR', () => this.deleteTeam(T.id), 'danger')];
-      p.hint = T.state === 'pending' ? 'Pending your signature. Open PIP to sign.' : mem.length ? 'Drag the floor onto a manager to change who it reports to.' : 'Empty floor. Drag agents in from other teams to staff it.';
+      p.hint = T.state === 'pending' ? 'Pending your signature. Open VIC to sign.' : mem.length ? 'Drag the floor onto a manager to change who it reports to.' : 'Empty floor. Drag agents in from other teams to staff it.';
     } else if (sel.kind === 'furn') {
       const F = this.furnById(sel.id);
       if (!F) return null;
@@ -1585,7 +1620,7 @@ export class Sim {
       p.noRows = !rows.length;
       p.noRowsText = 'No reports yet. Drop a team or manager on ' + s.name + '.';
       if (s.id === 'pip') {
-        p.sub = 'PRIME SUPERVISOR · ' + plural(m.teams.filter((T) => T.state === 'active').length, 'team') + ' running';
+        p.sub = 'CHIEF OF STUFF · ' + plural(m.teams.filter((T) => T.state === 'active').length, 'team') + ' running';
         const vNeeds = this.visibleNeeds();
         p.hasNeeds = true;
         p.needCount = vNeeds.length;
@@ -2008,7 +2043,7 @@ export class Sim {
         badge: this.visibleNeeds().length,
         badgeSc: this.reducedMotion ? 1 : 1 + 0.06 * Math.sin(t * 4),
         // U15/T6: keyboard access for the manager pin.
-        ariaLabel: s.name + ', ' + (prime ? 'prime supervisor' : s.role.toLowerCase()),
+        ariaLabel: s.name + ', ' + (prime ? 'chief of staff' : s.role.toLowerCase()),
         activate: () => this.select({ kind: 'sup', id: s.id }),
         down: (e: React.PointerEvent) => this.nodeDown(e, 'sup', s.id),
       });
@@ -2169,6 +2204,8 @@ export class Sim {
         this.resetConfirm = false;
         this.phoneColumnLayout = false;
         this.introOn = true;
+        this.vicNotes = [];
+        this.thinking = false;
         this.introPhase = 'sleep';
         this.pipAsleep = true;
         this.tourOn = false;

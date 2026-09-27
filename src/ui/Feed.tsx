@@ -33,7 +33,7 @@ export function Feed({ rv }: { rv: any }) {
         style={{ position: 'fixed', right: 18, top: 16, zIndex: 600, display: 'flex', alignItems: 'center', gap: 8, minHeight: 44, padding: '0 14px', background: '#fbfaf5', border: '2.5px solid #15140f', borderRadius: 12, fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 13, letterSpacing: '.1em', color: '#15140f', cursor: 'pointer', boxShadow: '0 4px 0 rgba(21,20,15,.15)' }}
       >
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#15140f', opacity: rv.liveOp }} />
-        PIP → YOU
+        VIC → YOU
       </button>
     );
   }
@@ -49,7 +49,7 @@ export function Feed({ rv }: { rv: any }) {
           <span style={{ position: 'absolute', left: 17, top: 11, width: 5, height: 6, background: '#f4f3ee', borderRadius: 1.5 }} />
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 13, letterSpacing: '.1em' }}>PIP → YOU</div>
+          <div style={{ fontWeight: 800, fontSize: 13, letterSpacing: '.1em' }}>VIC → YOU</div>
           <div style={{ fontWeight: 500, fontSize: 10.5, color: '#6b6a62', marginTop: 2 }}>
             {rv.teamCount} {rv.teamCount === 1 ? 'team' : 'teams'} · {rv.mgrCount} {rv.mgrCount === 1 ? 'manager' : 'managers'} · {rv.furnCount} {rv.furnCount === 1 ? 'object' : 'objects'}
           </div>

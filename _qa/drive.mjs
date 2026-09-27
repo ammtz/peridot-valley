@@ -89,7 +89,7 @@ await cdp('Page.navigate', { url: URL_ }); await sleep(2500);
 await js("localStorage.removeItem('the-system-live-v4'); location.reload()"); await sleep(2500);
 
 console.log('=== opening walk (' + TAG + ') ===');
-console.log('starts on wake screen:', (await feedText()).includes('tap to wake'));
+console.log('starts on wake screen:', (await feedText()).includes('Tap to wake Vic'));
 await shot('o1-wake');
 
 await js('window.__sim.wake()');
@@ -99,21 +99,27 @@ await sleep(200);
 console.log('U10 "Let\'s go" button present:', !!(await rectOfButton("Let's go")));
 const wentOk = await clickByText("Let's go");
 if (!wentOk) await js('window.__sim.advanceGreet()');
-await sleep(3000); // let "Should they check with you..." type out
+await sleep(3500); // let the approvals question type out
 await shot('o2-q1');
-console.log('q1 asked:', (await js('window.__sim.speechText')) === 'Should they check with you before anything important?');
+console.log('q1 asked:', (await js('window.__sim.speechText')) === 'Should my staff consult you directly for approvals, or shall I handle those decisions for you?');
 await checkHitTargets('q1 answer buttons');
 // Real tap on the Q1 answer button, to prove it is actually hittable.
-const askRect = await rectOfButton('No, just handle it');
-console.log('found "No, just handle it" button:', !!askRect);
+const askRect = await rectOfButton('You handle them');
+console.log('found "You handle them" button:', !!askRect);
 if (askRect) await tap(askRect[0], askRect[1]);
 else await js('window.__sim.answerQ1(false)');
-await sleep(300);
-
+await sleep(1500);
+console.log('Vic thinks between questions (no answer buttons yet):', (await js('window.__sim.thinking')) === true && !(await rectOfButton('Job hunt')));
+await shot('o2b-thinking');
+await sleep(1600);
 await js('window.__sim.finishSpeech()');
-console.log('q2 asked:', (await js('window.__sim.speechText')) === 'What should your helpers take off your plate first?');
+console.log('q2 asked:', (await js('window.__sim.speechText')) === 'Which part of your day shall I take off your hands first?');
+console.log("Vic's notes record the answer:", (await feedText()).includes("VIC'S NOTES"));
 await js("window.__sim.answerQ2('job')");
-await sleep(3000); // let the first hire card's line type out
+await sleep(2000);
+await js('window.__sim.finishSpeech()');
+await sleep(1500);
+console.log('hire card shows a blueprint:', (await feedText()).includes('BLUEPRINT')); // let the first hire card's line type out
 await shot('o3-hire-card');
 console.log('hire queue length:', await js('window.__sim.hireQueue.length'));
 await checkHitTargets('hire card buttons');
@@ -158,7 +164,7 @@ console.log('U8 outro line gone after ~5s:', !(await feedText()).includes("It's 
 // U2/U14: the dock only shows post-tour now; on phone it is the "+" button and its
 // sheet carries one-time tips for tools and the recorder (no tour stop teaches them).
 console.log('dock present at end:', MOBILE ? await js("!!document.getElementById('phone-add-btn')") : (await feedText()).includes('TOOLS'));
-console.log('feed present at end:', (await feedText()).includes('PIP'));
+console.log('feed present at end:', (await feedText()).includes('VIC'));
 if (MOBILE) {
   await js('window.__sim.openPhoneAdd()'); await sleep(300);
   console.log('U14 tools tip shown on first + sheet open:', (await feedText()).includes('drop it near the team'));
@@ -190,7 +196,7 @@ console.log('U15/T6 close/aria-label/aria-live present:', a11y.closeBtnsHaveLabe
 
 // Enter on a keyboard-focused world node (PIP) opens its popup, same as a tap.
 const kbOpened = await js(`(()=>{
-  const pip = [...document.querySelectorAll('[role="button"][tabindex="0"]')].find(el => el.getAttribute('aria-label')?.startsWith('PIP,'));
+  const pip = [...document.querySelectorAll('[role="button"][tabindex="0"]')].find(el => el.getAttribute('aria-label')?.startsWith('VIC,'));
   if (!pip) return false;
   pip.focus();
   pip.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
@@ -211,7 +217,7 @@ await cdp('Emulation.setEmulatedMedia', { features: [] });
 
 if (!MOBILE) {
   await js('location.reload()'); await sleep(2500);
-  console.log('returning visitor skips the opening:', !(await feedText()).includes('tap to wake'));
+  console.log('returning visitor skips the opening:', !(await feedText()).includes('Tap to wake Vic'));
   const fps = await js('new Promise(r=>{let n=0;const t0=performance.now();(function f(){n++;performance.now()-t0<2000?requestAnimationFrame(f):r(Math.round(n/2))})()})');
   console.log('fps', fps);
 
@@ -283,14 +289,14 @@ if (!MOBILE) {
   console.log('reset confirm shown:', (await feedText()).includes('Start over?'));
   await clickByText('YES, FROM SCRATCH'); await sleep(600);
   const after = await js("JSON.parse(localStorage.getItem('the-system-live-v4')||'null')");
-  console.log('after RESET, storage empty:', after === null, '| back on wake screen:', (await feedText()).includes('tap to wake'));
+  console.log('after RESET, storage empty:', after === null, '| back on wake screen:', (await feedText()).includes('Tap to wake Vic'));
 
   // T5: a v3 save (no snoozeUntil key at all, the shape the live site still writes)
   // must load without throwing, and migrate() should bring it up to v4 on save.
   const migrateInfo = await js(`(()=>{
     const v3 = {
       v: 3,
-      sups: { pip: { id: 'pip', name: 'PIP', role: 'PRIME SUPERVISOR', x: 540, y: 200, size: 58, boss: null } },
+      sups: { pip: { id: 'pip', name: 'VIC', role: 'CHIEF OF STUFF', x: 540, y: 200, size: 58, boss: null } },
       teams: [], agents: [], furn: [],
       needs: [{ id: 'n1', team: 'money', text: 'old-shape need', acts: [['GO AHEAD','ack']] }],
       feed: [], onboarded: true,
@@ -334,7 +340,7 @@ if (!MOBILE) {
     moodChip: !!document.querySelector('[aria-label="Legend and reset"]'),
     fitBtn: !!document.querySelector('[aria-label="Fit view"]'),
     addBtn: !!document.getElementById('phone-add-btn'),
-    feedPill: document.body.innerText.includes('PIP → YOU'),
+    feedPill: document.body.innerText.includes('VIC → YOU'),
     needsPill: /things? need you|All clear/.test(document.body.innerText),
     liveLineGone: !document.body.innerText.includes('live ·'),
     dockGridGone: !document.getElementById('dock-panel'),
