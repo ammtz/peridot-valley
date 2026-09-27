@@ -14,7 +14,7 @@ export function TitleBar({ agentCount, mgrCount, rv }: { agentCount: number; mgr
     return (
       <div style={{ position: 'fixed', left: 16, top: 16, display: 'flex', alignItems: 'center', gap: 9, fontFamily: "'JetBrains Mono',monospace", zIndex: 500 }}>
         <span style={{ width: 11, height: 11, background: '#15140f', borderRadius: 3, pointerEvents: 'none' }} />
-        <span style={{ fontWeight: 800, fontSize: 13, letterSpacing: '.16em', color: '#15140f', pointerEvents: 'none' }}>PERIDOT VALLEY</span>
+        <span style={{ fontWeight: 800, fontSize: 13, letterSpacing: window.innerWidth < 400 ? '.08em' : '.16em', color: '#15140f', pointerEvents: 'none' }}>PERIDOT VALLEY</span>
         <button
           onClick={rv.openPhoneMood}
           aria-label="Legend and reset"

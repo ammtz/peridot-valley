@@ -9,6 +9,7 @@ import { Popup } from './ui/Popup';
 import { Intro } from './ui/Intro';
 import { Tour } from './ui/Tour';
 import { NeedsPill } from './ui/NeedsPill';
+import { ControlBar } from './ui/ControlBar';
 
 export default function App() {
   const sim = useSim();
@@ -24,14 +25,16 @@ export default function App() {
   const showDock = full;
   const showZoom = full;
   const showTitle = full || sim.tourOn;
+  const phone = window.innerWidth < 560;
 
   return (
     <>
       <World sim={sim} rv={rv} />
       {showTitle && <TitleBar agentCount={rv.agentCount} mgrCount={rv.mgrCount} rv={rv} />}
       <PhoneMoodSheet rv={rv} />
-      {showZoom && <ZoomControls rv={rv} />}
-      {showDock && <Dock rv={rv} />}
+      {phone && showZoom && <ZoomControls rv={rv} />}
+      {phone && showDock && <Dock rv={rv} />}
+      {!phone && (showZoom || showDock || full) && <ControlBar rv={rv} showZoom={showZoom} showDock={showDock} showPill={full} />}
       {rv.hasGhost && (
         <div style={{ position: 'fixed', left: rv.ghost.x, top: rv.ghost.y, zIndex: 2000, pointerEvents: 'none', transform: `translate(-24px,-30px) scale(${rv.ghost.sc})`, fontFamily: "'JetBrains Mono',monospace" }}>
           <FurnitureIcon kind={rv.ghost.kind} t={rv.ghost.t} />
@@ -44,7 +47,7 @@ export default function App() {
         </div>
       )}
       {showFeed && <Feed rv={rv} />}
-      {full && <NeedsPill rv={rv} />}
+      {phone && full && <NeedsPill rv={rv} />}
       <Popup rv={rv} />
       <Intro sim={sim} />
       <Tour sim={sim} />

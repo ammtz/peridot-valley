@@ -30,10 +30,11 @@ export function Feed({ rv }: { rv: any }) {
     return (
       <button
         onClick={rv.toggleFeed}
+        aria-label="Open VIC's feed"
         style={{ position: 'fixed', right: 18, top: 16, zIndex: 600, display: 'flex', alignItems: 'center', gap: 8, minHeight: 44, padding: '0 14px', background: '#fbfaf5', border: '2.5px solid #15140f', borderRadius: 12, fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 13, letterSpacing: '.1em', color: '#15140f', cursor: 'pointer', boxShadow: '0 4px 0 rgba(21,20,15,.15)' }}
       >
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#15140f', opacity: rv.liveOp }} />
-        VIC → YOU
+        {window.innerWidth < 400 ? 'VIC' : 'VIC → YOU'}
       </button>
     );
   }

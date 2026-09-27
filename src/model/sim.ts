@@ -1,6 +1,9 @@
 import type { Agent, FeedCard, Furniture, Manager, Mood, Need, NodeKind, Sel, Settings, Team, WorldModel } from './types';
 import { BLOCKERS, CURRENT_V, DOCK_TIP, FEARS, FR, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic, plural } from './constants';
 import { blank, desks, roomH, roomW, seed } from './seed';
+
+const MAX_HELPERS = 6;
+const HELPER_NAMES = ['ACE', 'BEA', 'CAL', 'DOT', 'ELI', 'FAY', 'GUS', 'HAL', 'IRIS', 'JAX', 'KAI', 'LOU', 'MAE', 'NED', 'OLA', 'PIX', 'QUIN', 'ROO'];
 import { genericAgents, genericTeamPool, helperCount, pickPreset, Q2_OPTIONS, type PresetManagerSeed } from './presets';
 import { decide, type DecideState } from './decider';
 
@@ -115,6 +118,8 @@ export class Sim {
   renderTicks = 0;
   /** U15/T6: prefers-reduced-motion -- speech shows instantly, bob/pulse/aura stop. */
   reducedMotion = false;
+  /** Set by renderVals() when anything is animating this frame; start() then redraws every frame. */
+  motion = false;
   /** FIX1: true once layoutPhoneColumn() has reflowed the org into a scrollable column. */
   phoneColumnLayout = false;
 
@@ -527,14 +532,14 @@ export class Sim {
     // something actually changed (dirty), an interaction needs live feedback (drag),
     // an animation is mid-flight (pulses), or on a low-rate heartbeat so idle-but-
     // time-based UI (the typewriter, "3s ago" timestamps) still drifts forward.
-    const HEARTBEAT = 0.15;
+    const HEARTBEAT = 0.25;
     let lastHeartbeat = 0;
     const loop = () => {
       this.raf = requestAnimationFrame(loop);
       this.step();
       const t = NOW();
       const dueForHeartbeat = t - lastHeartbeat >= HEARTBEAT;
-      if (this.dirty || this.drag || this.pulses.length > 0 || dueForHeartbeat) {
+      if (this.motion || this.dirty || this.drag || this.pulses.length > 0 || dueForHeartbeat) {
         if (dueForHeartbeat) lastHeartbeat = t;
         this.renderTicks++;
         this.notify();
@@ -1032,6 +1037,22 @@ export class Sim {
       B.recv = NOW();
       this.card('ORG', this.chain(bossId).concat([s.name]).join(' › ') || s.name, '', s.name + ' now reports to ' + B.name + '.');
     }
+    this.dirty = true;
+    this.notify();
+  }
+  /** Add one helper to a team (Andres, 2026-09-27: "you cannot add a small worker into any team"). */
+  addHelper(teamId: string) {
+    const m = this.m,
+      T = this.team(teamId);
+    if (!T || this.members(T).length >= MAX_HELPERS) return;
+    const used = new Set(m.agents.map((a) => a.name));
+    const name = HELPER_NAMES.find((n) => !used.has(n)) || 'H' + m.agents.length;
+    const task = T.pool.length ? T.pool[T.pi % T.pool.length] : 'Get the lay of the land';
+    T.pi++;
+    m.agents.push({ id: teamId + '-' + name.toLowerCase() + Date.now().toString(36).slice(-3), name, role: 'helper', team: teamId, doing: task, backlog: [], done: [], blocked: null, fear: null });
+    this.card('ORG', this.pathName(teamId), '', name + ' joined ' + T.name + ' and picked up: ' + task + '.');
+    this.sel = { kind: 'team', id: teamId };
+    this.popAt = NOW();
     this.dirty = true;
     this.notify();
   }
@@ -1552,7 +1573,10 @@ export class Sim {
         a.done.slice(0, 2).forEach((x) => done.push({ text: x, tag: a.name }));
       });
       if (mem.length) p.secs = this.secs(t, doing, backlog, done.slice(0, 6));
-      if (!mem.length) p.acts = [btn('DELETE FLOOR', () => this.deleteTeam(T.id), 'danger')];
+      // 2026-09-27: a team can take one more helper at a time, up to MAX_HELPERS.
+      p.acts = [];
+      if (mem.length < MAX_HELPERS) p.acts.push(btn('+ HELPER', () => this.addHelper(T.id), 'primary'));
+      if (!mem.length) p.acts.push(btn('DELETE FLOOR', () => this.deleteTeam(T.id), 'danger'));
       p.hint = T.state === 'pending' ? 'Pending your signature. Open VIC to sign.' : mem.length ? 'Drag the floor onto a manager to change who it reports to.' : 'Empty floor. Drag agents in from other teams to staff it.';
     } else if (sel.kind === 'furn') {
       const F = this.furnById(sel.id);
@@ -1676,6 +1700,13 @@ export class Sim {
   }
 
   renderVals(): RenderVals {
+    // Lag fix (2026-09-27): anything that moves this frame sets `motion`, and start()
+    // redraws every frame while it is set. T4 had cut all redraws to a 0.15 s heartbeat,
+    // which made walking helpers and pop-ins stutter at about 7 fps.
+    let motion = this.pulses.length > 0 || !!this.drag || !this.speechDone();
+    // Labels on teams, managers and tools keep a readable size on screen when zoomed out:
+    // scale them up to about 10 px on screen, capped at 1.6x so neighbours don't collide.
+    const labelScale = Math.min(1.6, Math.max(1, 0.95 / this.zoom));
     const m = this.m,
       t = NOW(),
       z = this.zoom,
@@ -1720,8 +1751,10 @@ export class Sim {
         isSel = !!(sel && sel.kind === 'furn' && sel.id === F.id);
       const dragging = !!(dr && dr.kind === 'furn' && dr.id === F.id && dr.moved);
       const born = F.born != null ? cl((t - F.born) / 0.5, 0, 1) : 1;
+      if (born < 1) motion = true;
       const nOn = F.on.filter(Boolean).length;
       furn.push({
+        ls: labelScale,
         id: F.id,
         x: F.x,
         y: F.y,
@@ -1755,6 +1788,7 @@ export class Sim {
       const born = T.born != null ? cl((t - T.born) / 0.6, 0, 1) : 1;
       const bsc = T.born != null && born < 1 ? outBack(born) : 1;
       const fe = t - (T.fireAt != null ? T.fireAt : -99);
+      if (born < 1 || (fe >= 0 && fe < 0.7)) motion = true;
       const emph = fe >= 0 && fe < 0.5 ? 1 + 0.045 * Math.sin((fe / 0.5) * Math.PI) : 1;
       const isSel = !!(sel && sel.kind === 'team' && sel.id === T.id);
       const hot = !!dragA && this.hover === T.id;
@@ -1811,6 +1845,7 @@ export class Sim {
         d.wy = T.y + d.y;
         this.apos[a.id] = { x: d.wx, y: d.wy };
         const walking = trip || (gap > 2 && md !== 'bored');
+        if (walking) motion = true;
         let bob = 0,
           jx = 0,
           rot = 0,
@@ -1945,6 +1980,7 @@ export class Sim {
         .join(' · ');
       const anyStuck = mem.some((a) => a.blocked);
       rooms.push({
+        ls: labelScale,
         id: T.id,
         l: T.x - w / 2,
         t: T.y - h / 2,
@@ -1987,6 +2023,7 @@ export class Sim {
         rsc = rv >= 0 && rv < 0.45 ? 1 + 0.12 * Math.sin((rv / 0.45) * Math.PI) : 1;
       const born = s.born != null ? cl((t - s.born) / 0.6, 0, 1) : 1;
       const bsc = s.born != null && born < 1 ? outBack(born) : 1;
+      if (born < 1 || (rv >= 0 && rv < 0.45)) motion = true;
       const isSel = !!(sel && sel.kind === 'sup' && sel.id === s.id);
       const hot = this.hoverMgr === s.id;
       let lx = 0,
@@ -2007,6 +2044,7 @@ export class Sim {
         g = sz * 0.16;
       const dragging = !!(dr && dr.kind === 'sup' && dr.id === s.id && dr.moved);
       sups.push({
+        ls: labelScale,
         id: s.id,
         x: s.x,
         y: s.y,
@@ -2113,6 +2151,8 @@ export class Sim {
 
     const pop = sel ? this.buildPop(t, vw, vh) : null;
     const tgt = S[this.addTargetId()] || S.pip;
+    if (this.sel && t - this.popAt < 0.3) motion = true;
+    this.motion = motion;
 
     return {
       panX: P.x,
@@ -2144,6 +2184,7 @@ export class Sim {
             down: (e: React.PointerEvent) => this.dockDown(e, k),
           }))
         : [],
+      feedW: this.feedW(),
       dockX: vw - this.feedW() < 700 ? (vw - this.feedW()) / 2 : Math.max(290 + 200, (vw - this.feedW()) / 2 + 40),
       ctrlBottom: vw - this.feedW() < 700 ? 128 : 18,
       phoneMoodOpen: this.phoneMoodOpen,

@@ -100,7 +100,26 @@ function PhoneAddSheet({ rv }: { rv: any }) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function Dock({ rv }: { rv: any }) {
+export function Dock({ rv, compact }: { rv: any; compact?: boolean }) {
+  if (compact) {
+    // Desktop, narrow bar: one + button (same sheet as the phone), so the dock never covers the world.
+    return (
+      <>
+        <button
+          id="desk-add-btn"
+          onClick={rv.openPhoneAdd}
+          aria-label="Add manager, team, or tool"
+          style={{
+            position: 'relative', pointerEvents: 'auto', width: 56, height: 56, borderRadius: 18, background: '#15140f', color: '#f4f3ee',
+            border: '2.5px solid #15140f', fontWeight: 800, fontSize: 26, lineHeight: 1, cursor: 'pointer', boxShadow: '0 6px 0 rgba(21,20,15,.18)',
+          }}
+        >
+          +
+        </button>
+        <PhoneAddSheet rv={rv} />
+      </>
+    );
+  }
   if (window.innerWidth < 560) {
     return (
       <>
@@ -123,7 +142,7 @@ export function Dock({ rv }: { rv: any }) {
     <div
       id="dock-panel"
       style={{
-        position: 'fixed', left: rv.dockX, bottom: 16, transform: `translateX(-50%) scale(${Math.min(1, (window.innerWidth - 24) / 390)})`, transformOrigin: 'bottom center', zIndex: 550, display: 'flex', alignItems: 'stretch', gap: 8,
+        position: 'relative', pointerEvents: 'auto', display: 'flex', alignItems: 'stretch', gap: 8,
         padding: 8, background: '#fbfaf5', border: '2.5px solid #15140f', borderRadius: 16, boxShadow: '0 6px 0 rgba(21,20,15,.12)',
         fontFamily: "'JetBrains Mono',monospace", color: '#15140f', userSelect: 'none', touchAction: 'none',
       }}
