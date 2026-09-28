@@ -1,5 +1,5 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function ZoomControls({ rv }: { rv: any }) {
+export function ZoomControls({ rv, mode }: { rv: any; mode?: 'full' | 'fitreset' | 'fit' }) {
   // U11: every button is at least 44x44.
   const btn = { width: 44, height: 44, background: '#fbfaf5', border: '2px solid #15140f', borderRadius: 11, fontWeight: 800, fontSize: 17, color: '#15140f', cursor: 'pointer', boxShadow: '0 3px 0 rgba(21,20,15,.18)' } as const;
   // Phones: pinch zooms, so −/%/+ go away; RESET moves into the "?" sheet. Keep FIT, at a real hit size.
@@ -12,13 +12,16 @@ export function ZoomControls({ rv }: { rv: any }) {
       </div>
     );
   }
+  // Desktop: rendered inline inside ControlBar, which lays it out beside the pill and the
+  // dock so nothing overlaps. `mode` sheds the least-used buttons when the bar is narrow.
+  const m = mode || 'full';
   return (
-    <div style={{ position: 'fixed', left: 18, bottom: rv.ctrlBottom, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'JetBrains Mono',monospace", zIndex: 500 }}>
-      <button onClick={rv.zoomOut} style={btn}>−</button>
-      <div style={{ minWidth: 46, textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#15140f' }}>{rv.zoomPct}%</div>
-      <button onClick={rv.zoomIn} style={btn}>+</button>
+    <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'JetBrains Mono',monospace", pointerEvents: 'auto' }}>
+      {m === 'full' && <button onClick={rv.zoomOut} aria-label="Zoom out" style={btn}>−</button>}
+      {m === 'full' && <div style={{ minWidth: 46, textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#15140f' }}>{rv.zoomPct}%</div>}
+      {m === 'full' && <button onClick={rv.zoomIn} aria-label="Zoom in" style={btn}>+</button>}
       <button onClick={rv.fit} style={{ minHeight: 44, padding: '0 14px', background: '#fbfaf5', border: '2px solid #15140f', borderRadius: 11, fontWeight: 800, fontSize: 13, letterSpacing: '.06em', color: '#15140f', cursor: 'pointer', boxShadow: '0 3px 0 rgba(21,20,15,.18)' }}>FIT</button>
-      <button onClick={rv.resetAsk} style={{ minHeight: 44, padding: '0 14px', background: 'transparent', border: '2px solid rgba(21,20,15,.25)', borderRadius: 11, fontWeight: 700, fontSize: 13, letterSpacing: '.06em', color: '#6b6a62', cursor: 'pointer' }}>RESET</button>
+      {m !== 'fit' && <button onClick={rv.resetAsk} style={{ minHeight: 44, padding: '0 14px', background: 'transparent', border: '2px solid rgba(21,20,15,.25)', borderRadius: 11, fontWeight: 700, fontSize: 13, letterSpacing: '.06em', color: '#6b6a62', cursor: 'pointer' }}>RESET</button>}
       {rv.resetConfirmOpen && (
         <div style={{ position: 'absolute', left: 0, bottom: 52, width: 220, padding: '12px 14px', background: '#fbfaf5', border: '2.5px solid #15140f', borderRadius: 12, boxShadow: '0 6px 0 rgba(21,20,15,.14)', display: 'flex', flexDirection: 'column', gap: 9 }}>
           <div style={{ fontSize: 13, fontWeight: 700 }}>Start over?</div>

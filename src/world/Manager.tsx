@@ -3,6 +3,7 @@ export function Manager({ s }: { s: any }) {
   return (
     <div style={{ position: 'absolute', left: s.x, top: s.y, width: 0, height: 0, zIndex: s.z, opacity: s.op }}>
       <div
+        data-mgr={s.name || s.id}
         style={{
           position: 'absolute', left: s.haloL, top: s.haloT, width: s.halo, height: s.halo, borderRadius: '50%',
           border: `2px ${s.haloStyle} rgba(21,20,15,${s.haloOp})`, background: s.haloBg, transform: `scale(${s.hs})`, pointerEvents: 'none',
@@ -34,7 +35,7 @@ export function Manager({ s }: { s: any }) {
       </div>
       {/* V3/V6: a background behind the name/role so the reporting line (and anything
           else) never reads as cutting through the text. */}
-      <div style={{ position: 'absolute', left: 0, top: s.labT, transform: 'translateX(-50%)', textAlign: 'center', whiteSpace: 'nowrap', pointerEvents: 'none', background: '#f4f3ee', padding: '1px 7px', borderRadius: 5 }}>
+      <div style={{ position: 'absolute', left: 0, top: s.labT, transform: `translateX(-50%) scale(${s.ls || 1})`, transformOrigin: 'center top', textAlign: 'center', whiteSpace: 'nowrap', pointerEvents: 'none', background: '#f4f3ee', padding: '1px 7px', borderRadius: 5 }}>
         <div style={{ fontWeight: 800, fontSize: s.nameSize, letterSpacing: '.14em' }}>{s.name}</div>
         <div style={{ fontWeight: 600, fontSize: 9.5, letterSpacing: '.1em', color: '#6b6a62', marginTop: 2 }}>{s.role}</div>
       </div>
