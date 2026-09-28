@@ -48,6 +48,9 @@ export const outCubic = (p: number) => 1 - Math.pow(1 - p, 3);
 export const inOutSine = (p: number) => -(Math.cos(Math.PI * p) - 1) / 2;
 export const inOutCubic = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
 export const NOW = () => performance.now() / 1000;
+let uidN = 0;
+/** A fresh id. Date.now() alone repeats when two things are made in the same millisecond. */
+export const uid = (prefix: string) => prefix + Date.now().toString(36) + (uidN++).toString(36);
 export const FR = 190;
 export const MGR_NAMES = ['IVY', 'REX', 'MOSS', 'LUNA', 'KIT', 'JUNO', 'FERN', 'BO', 'SAGE', 'NIX'];
 

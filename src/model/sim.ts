@@ -1,5 +1,5 @@
 import type { Agent, FeedCard, Furniture, Manager, Mood, Need, NodeKind, Sel, Settings, Team, WorldModel } from './types';
-import { BLOCKERS, CURRENT_V, DOCK_TIP, FEARS, FR, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic, plural } from './constants';
+import { BLOCKERS, CURRENT_V, uid, DOCK_TIP, FEARS, FR, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic, plural } from './constants';
 import { blank, desks, roomH, roomW, seed } from './seed';
 
 const MAX_HELPERS = 6;
@@ -279,7 +279,7 @@ export class Sim {
         m.agents.push({ id: ts.id + '-' + a.n.toLowerCase(), name: a.n, role: a.role, team: ts.id, doing: a.doing, backlog: a.backlog.slice(), done: a.done.slice(), blocked: null, fear: null, ...extra });
       });
       if (first && j === 0 && this.pendingContext) {
-        m.furn.push({ id: 'ctx' + Date.now().toString(36), type: 'books', x: tx + 90, y: ty + 30, on: [true, false, false, false, false], born: t + 0.4 });
+        m.furn.push({ id: uid('ctx'), type: 'books', x: tx + 90, y: ty + 30, on: [true, false, false, false, false], born: t + 0.4 });
         this.pendingContext = false;
       }
     });
@@ -342,7 +342,7 @@ export class Sim {
     if (!name.trim() || this.addTeamCount >= 3) return;
     const m = this.m,
       pip = m.sups.pip,
-      id = 'ct' + Date.now().toString(36),
+      id = uid('ct'),
       t = NOW();
     const tx = pip.x + (Math.random() - 0.5) * 300,
       ty = pip.y + 320 + this.addTeamCount * 10;
@@ -493,6 +493,18 @@ export class Sim {
     try {
       const s = JSON.parse(localStorage.getItem(KEY) || 'null');
       if (!s || (s.v !== 3 && s.v !== CURRENT_V)) return null;
+      // Every manager must reach VIC. A cycle in a hand-edited or corrupted save would
+      // otherwise make the org chart walk forever.
+      const sups = s.sups as Record<string, Manager>;
+      const reachesTop = (id: string) => {
+        let k: string | null = id;
+        for (let i = 0; k && i < 50; i++) {
+          if (k === 'pip') return true;
+          k = sups[k] ? sups[k].boss : null;
+        }
+        return false;
+      };
+      if (!sups.pip || !Object.keys(sups).every(reachesTop)) return null;
       this.migrate(s);
       s.teams.forEach((T: Team) => {
         T.born = null;
@@ -568,8 +580,9 @@ export class Sim {
   }
   chain(bossId: string | null): string[] {
     const out: string[] = [];
-    let k = bossId;
-    while (k && k !== 'pip' && this.m.sups[k]) {
+    let k = bossId,
+      guard = 0;
+    while (k && k !== 'pip' && this.m.sups[k] && guard++ < 50) {
       out.unshift(this.m.sups[k].name);
       k = this.m.sups[k].boss;
     }
@@ -973,7 +986,7 @@ export class Sim {
     F.lastAnn = key;
   }
   placeFurn(type: Furniture['type'], x: number, y: number) {
-    const F: Furniture = { id: 'fx' + Date.now().toString(36), type, x, y, on: FT[type].opts.map((_, i) => i === 0), born: NOW() };
+    const F: Furniture = { id: uid('fx'), type, x, y, on: FT[type].opts.map((_, i) => i === 0), born: NOW() };
     this.m.furn.push(F);
     this.announceFurn(F);
     // U3: don't auto-select (and pop open its sheet) over the tour.
@@ -1049,7 +1062,7 @@ export class Sim {
     const name = HELPER_NAMES.find((n) => !used.has(n)) || 'H' + m.agents.length;
     const task = T.pool.length ? T.pool[T.pi % T.pool.length] : 'Get the lay of the land';
     T.pi++;
-    m.agents.push({ id: teamId + '-' + name.toLowerCase() + Date.now().toString(36).slice(-3), name, role: 'helper', team: teamId, doing: task, backlog: [], done: [], blocked: null, fear: null });
+    m.agents.push({ id: uid(teamId + '-' + name.toLowerCase() + '-'), name, role: 'helper', team: teamId, doing: task, backlog: [], done: [], blocked: null, fear: null });
     this.card('ORG', this.pathName(teamId), '', name + ' joined ' + T.name + ' and picked up: ' + task + '.');
     this.sel = { kind: 'team', id: teamId };
     this.popAt = NOW();
@@ -1061,7 +1074,7 @@ export class Sim {
       b = m.sups[bossId] || m.sups.pip;
     const used = new Set(Object.values(m.sups).map((s) => s.name));
     const name = MGR_NAMES.find((n) => !used.has(n)) || 'MGR' + Object.keys(m.sups).length;
-    const id = 'm' + Date.now().toString(36);
+    const id = uid('m');
     m.sups[id] = { id, name, role: 'NEW BRANCH', x: b.x + (Math.random() - 0.5) * 280, y: b.y + 175, size: 40, boss: b.id, born: NOW() };
     b.recv = NOW();
     this.card('ORG', name, '', name + ' joined as a manager under ' + b.name + '.');
@@ -1073,7 +1086,7 @@ export class Sim {
   addTeam(bossId: string) {
     const m = this.m,
       b = m.sups[bossId] || m.sups.pip;
-    const id = 't' + Date.now().toString(36);
+    const id = uid('t');
     m.teams.push({ id, name: 'NEW TEAM', boss: b.id, x: b.x + (Math.random() - 0.5) * 280, y: b.y + 210, state: 'active', pool: ['Review the queue', 'Check in with the lead', 'Tidy up shared notes'], pi: 0, born: NOW() });
     this.card('ORG', this.pathName(id), '', 'New team floor under ' + b.name + '. Drag agents in to staff it.');
     this.sel = { kind: 'team', id };
@@ -1325,7 +1338,7 @@ export class Sim {
     const [text, fix] = BLOCKERS[a.team] || BLOCKERS._;
     a.blocked = { text, fix };
     this.removeNeeds(a.id, 'blocked');
-    this.pushNeed({ id: 'nb' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'blocked', text: a.name + ' is stuck: ' + text + '.', acts: [[fix, 'unblock'], ['LATER', 'skip']] });
+    this.pushNeed({ id: uid('nb'), agent: a.id, team: a.team, kind: 'blocked', text: a.name + ' is stuck: ' + text + '.', acts: [[fix, 'unblock'], ['LATER', 'skip']] });
     this.card('STUCK', this.pathName(a.team), a.name, ' is stuck: ' + text + '.');
     this.evLog.push({ t: NOW(), team: a.team, kind: 'stuck', who: a.name, text });
   }
@@ -1341,7 +1354,7 @@ export class Sim {
     }
     a.fear = f;
     this.removeNeeds(a.id, 'fear');
-    this.pushNeed({ id: 'nf' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'fear', text: a.name + ' wants your OK before ' + f + '.', acts: [['GO AHEAD', 'approve'], ['HOLD OFF', 'hold']] });
+    this.pushNeed({ id: uid('nf'), agent: a.id, team: a.team, kind: 'fear', text: a.name + ' wants your OK before ' + f + '.', acts: [['GO AHEAD', 'approve'], ['HOLD OFF', 'hold']] });
     this.card('ASKS', this.pathName(a.team), a.name, ' wants your OK before ' + f + '.');
     this.evLog.push({ t: NOW(), team: a.team, kind: 'fear', who: a.name, text: f });
   }
