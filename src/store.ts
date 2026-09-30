@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Sim } from './model/sim';
+import { devServerSource, startLiveFeed } from './live/feed';
 
 let singleton: Sim | null = null;
 
@@ -20,7 +21,10 @@ export function useSim(): Sim {
   useEffect(() => {
     sim.notify = () => setTick((n) => n + 1);
     sim.start();
+    // M8: real events, when a source exists (dev server today, M2's ledger later). Off on the deployed site.
+    const stopLive = startLiveFeed(devServerSource, (events, initial) => sim.applyLive(events, initial));
     return () => {
+      stopLive();
       sim.notify = () => {};
       sim.stop();
     };

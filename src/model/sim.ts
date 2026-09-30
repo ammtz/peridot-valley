@@ -6,6 +6,7 @@ const MAX_HELPERS = 6;
 const HELPER_NAMES = ['ACE', 'BEA', 'CAL', 'DOT', 'ELI', 'FAY', 'GUS', 'HAL', 'IRIS', 'JAX', 'KAI', 'LOU', 'MAE', 'NED', 'OLA', 'PIX', 'QUIN', 'ROO'];
 import { genericAgents, genericTeamPool, helperCount, pickPreset, Q2_OPTIONS, type PresetManagerSeed } from './presets';
 import { decide, type DecideState } from './decider';
+import { jobName, tally, tickerText, toAction, type LiveAction, type MeroEvent } from '../live/events';
 
 type DragKind = 'pan' | 'team' | 'sup' | 'furn' | 'agent' | 'newfurn' | 'ghost';
 
@@ -90,6 +91,9 @@ export class Sim {
   showAddSheetToolsTip = false;
   showAddSheetRecorderTip = false;
   evLog: { t: number; team: string; kind: 'done' | 'stuck' | 'fear'; who?: string; text?: string }[] = [];
+  /** M8: real events seen so far (capped), and the title-bar line built from them. Null until a live source connects. */
+  liveEvents: MeroEvent[] = [];
+  liveTicker: string | null = null;
   pan = { x: 0, y: 0 };
   zoom = 1;
   sel: Sel | null = null;
@@ -1176,6 +1180,82 @@ export class Sim {
     return out;
   }
 
+  // ---------------------------------------------------------------- M8: real events
+  /** The team that holds one creature per real laptop job. Made the first time a job is seen. */
+  private liveTeam(): Team {
+    const found = this.m.teams.find((T) => T.live);
+    if (found) return found;
+    const b = this.m.sups.pip || Object.values(this.m.sups)[0];
+    // Beside the org, never on top of it: just right of everything already placed, at the first team row.
+    const x = Math.max(b.x + 300, this.orgBounds().x1 + 190);
+    const T: Team = { id: 'live-jobs', name: 'LAPTOP JOBS', boss: b.id, x, y: b.y + 210, state: 'active', pool: [], pi: 0, born: NOW(), live: true };
+    this.m.teams.push(T);
+    this.card('ORG', this.pathName(T.id), '', 'LAPTOP JOBS joined. These helpers are real: each one is a scheduled job on this laptop.');
+    return T;
+  }
+  private liveAgent(T: Team, job: string): Agent {
+    const id = 'live-' + job;
+    let a = this.m.agents.find((x) => x.id === id);
+    if (!a) {
+      a = { id, name: jobName(job), role: 'laptop job', team: T.id, doing: null, backlog: [], done: [], blocked: null, fear: null };
+      this.m.agents.push(a);
+    }
+    return a;
+  }
+  /** Apply one real event. `quiet` sets the state without posting cards (catching up on history). */
+  private applyLiveAction(a: Agent, act: LiveAction, quiet: boolean) {
+    const path = this.pathName(a.team);
+    if (act.kind === 'start') {
+      a.doing = act.text;
+      a.blocked = null;
+      this.removeNeeds(a.id, 'blocked');
+      if (!quiet) this.card('LIVE', path, a.name, ' started.');
+    } else if (act.kind === 'done') {
+      a.doing = act.text;
+      if (quiet) {
+        a.done = [act.text, ...a.done].slice(0, 8);
+        a.doing = null;
+      } else this.complete(a, NOW());
+    } else if (act.kind === 'stuck') {
+      a.doing = null;
+      a.blocked = { text: act.text, fix: 'SEEN IT' };
+      this.removeNeeds(a.id, 'blocked');
+      this.pushNeed({ id: 'nl' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'blocked', text: a.name + ': ' + act.text + '.', acts: [['SEEN IT', 'unblock'], ['LATER', 'skip']] });
+      if (!quiet) {
+        this.card('STUCK', path, a.name, ' ' + act.text + '.');
+        this.evLog.push({ t: NOW(), team: a.team, kind: 'stuck', who: a.name, text: act.text });
+      }
+    } else if (!quiet) {
+      this.card('LIVE', path, a.name, ': ' + act.text + '.');
+    }
+  }
+  /**
+   * Take a batch of real events from src/live/feed.ts. The first batch is the history
+   * so far: it sets each job's state quietly and posts one card, instead of replaying
+   * a day of runs. Before onboarding there is no org to hang the team on, so events
+   * only update the ticker; the creatures appear on the next batch after it.
+   */
+  applyLive(events: MeroEvent[], initial: boolean) {
+    const ready = this.m.onboarded && !this.introOn;
+    // An empty poll matters only when onboarding just finished and some job has no creature yet.
+    if (!events.length && !initial && !(ready && this.liveEvents.some((e) => !this.m.agents.some((a) => a.id === 'live-' + e.job)))) return;
+    this.liveEvents = this.liveEvents.concat(events).slice(-2000);
+    const t = tally(this.liveEvents);
+    this.liveTicker = tickerText(t);
+    if (ready && t.jobs.length) {
+      const T = this.liveTeam();
+      const fresh = t.jobs.filter((j) => !this.m.agents.some((a) => a.id === 'live-' + j));
+      t.jobs.forEach((j) => this.liveAgent(T, j));
+      // New creatures catch up on the whole history; known ones only on what's new.
+      const replay = initial ? this.liveEvents : this.liveEvents.filter((e) => fresh.includes(e.job) && !events.includes(e));
+      replay.forEach((e) => this.applyLiveAction(this.liveAgent(T, e.job), toAction(e), true));
+      if (!initial) events.forEach((e) => this.applyLiveAction(this.liveAgent(T, e.job), toAction(e), false));
+      if (initial) this.card('LIVE', this.pathName(T.id), '', 'Connected to the laptop jobs: ' + t.jobs.join(', ') + '.');
+    }
+    this.dirty = true;
+    this.notify();
+  }
+
   step() {
     const t = NOW();
     this.tickStory(t);
@@ -1185,7 +1265,8 @@ export class Sim {
       const dragA = this.drag && this.drag.kind === 'agent' ? this.drag.id : null;
       const live = this.m.agents.filter((a) => {
         const T = this.team(a.team);
-        return T && T.state === 'active' && a.id !== dragA;
+        // M8: real laptop jobs move only when a real event says so.
+        return T && T.state === 'active' && !T.live && a.id !== dragA;
       });
       live.forEach((a) => {
         if (!a.doing && a.backlog.length) a.doing = a.backlog.shift()!;
@@ -2209,6 +2290,7 @@ export class Sim {
       // V1: PIP is the prime supervisor, not a "manager" — don't count her.
       mgrCount: Object.keys(S).length - 1,
       furnCount: m.furn.length,
+      liveTicker: this.liveTicker,
       zoomPct: Math.round(z * 100),
       zoomIn: () => {
         this.zoomAt((vw - this.feedW()) / 2, vh / 2, 1.2);

@@ -26,6 +26,8 @@ export interface Team {
   pi: number;
   born?: number | null;
   fireAt?: number | null;
+  /** M8: a team of real laptop jobs, driven by src/live, never by the simulation. */
+  live?: boolean;
 }
 
 export interface Agent {
