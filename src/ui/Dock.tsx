@@ -2,7 +2,22 @@ import { useRef, useState } from 'react';
 import { FurnitureIcon } from '../world/FurnitureIcon';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function DockTile({ dk }: { dk: any }) {
+function BuilderToggle({ rv, wide }: { rv: any; wide?: boolean }) {
+  return (
+    <button
+      id="builder-toggle"
+      onClick={rv.toggleBuilder}
+      aria-pressed={rv.builder}
+      title="Builder mode (B): rename, hire, add, re-org, place and wire"
+      style={{ minHeight: 44, minWidth: 44, width: wide ? '100%' : undefined, padding: '0 12px', borderRadius: 8, border: '2px solid #15140f', background: rv.builder ? '#e8b923' : 'transparent', color: '#15140f', fontWeight: 800, fontSize: 12, letterSpacing: '.06em', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}
+    >
+      {rv.builder ? 'BUILDER: ON' : 'BUILDER: OFF'} <span style={{ fontWeight: 600, opacity: 0.6 }}>B</span>
+    </button>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function DockTile({ dk, builder }: { dk: any; builder: boolean }) {
   const [tip, setTip] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearTimer = () => {
@@ -35,7 +50,7 @@ function DockTile({ dk }: { dk: any }) {
           dk.activate();
         }
       }}
-      style={{ position: 'relative', width: 62, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '5px 2px 4px', borderRadius: 10, cursor: 'grab' }}
+      style={{ position: 'relative', width: 62, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '5px 2px 4px', borderRadius: 10, cursor: builder ? 'grab' : 'not-allowed', opacity: builder ? 1 : 0.4 }}
     >
       {tip && (
         <div
@@ -44,7 +59,7 @@ function DockTile({ dk }: { dk: any }) {
             border: '2px solid #15140f', borderRadius: 10, boxShadow: '0 4px 0 rgba(21,20,15,.14)', fontSize: 10.5, fontWeight: 600, lineHeight: 1.4, color: '#15140f', zIndex: 700, pointerEvents: 'none',
           }}
         >
-          {dk.tip}
+          {builder ? dk.tip : 'Turn on Builder mode'}
         </div>
       )}
       <FurnitureIcon kind={dk.kind} t={dk.t} />
@@ -70,12 +85,11 @@ function PhoneAddSheet({ rv }: { rv: any }) {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 12px', borderBottom: '2px solid #15140f' }}>
-        <div style={{ fontWeight: 800, fontSize: 13, letterSpacing: '.1em' }}>ADD · under {rv.addTarget}</div>
+        <div style={{ fontWeight: 800, fontSize: 13, letterSpacing: '.1em' }}>TOOLS</div>
         <button onClick={rv.closePhoneAdd} aria-label="Close" style={{ width: 44, height: 44, border: '2px solid #15140f', borderRadius: 10, background: 'transparent', fontWeight: 800, fontSize: 15, color: '#15140f', cursor: 'pointer' }}>×</button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 16 }}>
-        <button style={{ ...tileBtn, background: '#15140f', color: '#f4f3ee' }} onClick={() => { rv.addMgr(); rv.closePhoneAdd(); }}>+ MANAGER</button>
-        <button style={tileBtn} onClick={() => { rv.addTeam(); rv.closePhoneAdd(); }}>+ TEAM</button>
+        <BuilderToggle rv={rv} wide />
         <div style={{ height: 1.5, background: '#dedcd2', margin: '6px 0' }} />
         {/* U14: the tour no longer teaches tools, so the first sheet-open explains them here. */}
         {rv.showAddSheetToolsTip && (
@@ -86,7 +100,7 @@ function PhoneAddSheet({ rv }: { rv: any }) {
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         {rv.dock.map((dk: any) => (
           <div key={dk.kind}>
-            <button style={tileBtn} onClick={() => rv.placeFromSheet(dk.kind)}>
+            <button style={{ ...tileBtn, opacity: rv.builder ? 1 : 0.4 }} disabled={!rv.builder} title={rv.builder ? undefined : 'Turn on Builder mode'} onClick={() => rv.placeFromSheet(dk.kind)}>
               <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.06em' }}>{dk.short}</span>
             </button>
             {dk.kind === 'rec' && rv.showAddSheetRecorderTip && (
@@ -108,7 +122,7 @@ export function Dock({ rv, compact }: { rv: any; compact?: boolean }) {
         <button
           id="desk-add-btn"
           onClick={rv.openPhoneAdd}
-          aria-label="Add manager, team, or tool"
+          aria-label="Tools and builder mode"
           style={{
             position: 'relative', pointerEvents: 'auto', width: 56, height: 56, borderRadius: 18, background: '#15140f', color: '#f4f3ee',
             border: '2.5px solid #15140f', fontWeight: 800, fontSize: 26, lineHeight: 1, cursor: 'pointer', boxShadow: '0 6px 0 rgba(21,20,15,.18)',
@@ -126,7 +140,7 @@ export function Dock({ rv, compact }: { rv: any; compact?: boolean }) {
         <button
           id="phone-add-btn"
           onClick={rv.openPhoneAdd}
-          aria-label="Add manager, team, or tool"
+          aria-label="Tools and builder mode"
           style={{
             position: 'fixed', right: 16, bottom: rv.ctrlBottom, width: 56, height: 56, borderRadius: 18, background: '#15140f', color: '#f4f3ee',
             border: '2.5px solid #15140f', fontWeight: 800, fontSize: 26, lineHeight: 1, cursor: 'pointer', boxShadow: '0 6px 0 rgba(21,20,15,.18)', zIndex: 550,
@@ -148,15 +162,14 @@ export function Dock({ rv, compact }: { rv: any; compact?: boolean }) {
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5, justifyContent: 'center' }}>
-        <button onClick={rv.addMgr} style={{ minHeight: 44, padding: '0 12px', borderRadius: 8, border: '2px solid #15140f', background: '#15140f', color: '#f4f3ee', fontWeight: 800, fontSize: 13, letterSpacing: '.06em', cursor: 'pointer', whiteSpace: 'nowrap' }}>+ MANAGER</button>
-        <button onClick={rv.addTeam} style={{ minHeight: 44, padding: '0 12px', borderRadius: 8, border: '2px solid #15140f', background: 'transparent', color: '#15140f', fontWeight: 800, fontSize: 13, letterSpacing: '.06em', cursor: 'pointer', whiteSpace: 'nowrap' }}>+ TEAM</button>
-        <div style={{ fontSize: 8.5, fontWeight: 600, color: '#6b6a62', textAlign: 'center', whiteSpace: 'nowrap' }}>under {rv.addTarget}</div>
+        <BuilderToggle rv={rv} />
+        <div style={{ fontSize: 8.5, fontWeight: 600, color: '#6b6a62', textAlign: 'center', whiteSpace: 'nowrap' }}>{rv.builder ? 'drag a tool in' : 'turn on to edit'}</div>
       </div>
       <div style={{ width: 1.5, background: '#dedcd2', margin: '2px 2px' }} />
       <div style={{ display: 'flex', gap: 4 }}>
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         {rv.dock.map((dk: any) => (
-          <DockTile key={dk.kind} dk={dk} />
+          <DockTile key={dk.kind} dk={dk} builder={rv.builder} />
         ))}
       </div>
     </div>

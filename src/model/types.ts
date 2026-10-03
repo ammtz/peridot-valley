@@ -1,4 +1,4 @@
-export type FurnKind = 'mcp' | 'db' | 'books' | 'rec';
+export type FurnKind = 'mcp' | 'db' | 'books' | 'rec' | 'chamber' | 'meeting' | 'drive';
 export type TeamState = 'active' | 'pending' | 'hidden';
 export type Mood = 'working' | 'flow' | 'overwhelmed' | 'bored' | 'frustrated' | 'stalled' | 'pending';
 export type NodeKind = 'agent' | 'team' | 'sup' | 'furn';
@@ -26,6 +26,8 @@ export interface Team {
   pi: number;
   born?: number | null;
   fireAt?: number | null;
+  /** M8: a team of real laptop jobs, driven by src/live, never by the simulation. */
+  live?: boolean;
 }
 
 export interface Agent {
@@ -41,6 +43,8 @@ export interface Agent {
   flowUntil?: number;
   recent?: number[];
   flowSeed?: boolean;
+  /** M8: the ledger actor a real creature stands for (`job:NAME`, `vic`, `l0:NAME`…), so MERO's moods can find it. */
+  actor?: string;
 }
 
 export interface Furniture {
@@ -53,6 +57,18 @@ export interface Furniture {
   lastAnn?: string;
   lastRecapT?: number | null;
   lastRecapText?: string;
+  /** Set while a builder worker is putting this up. Not kept across reloads. */
+  build?: { start: number; dur: number; team: string | null } | null;
+  /** The team whose quarters this sits in (its own slot), or null for a shared, cross-team facility. */
+  /** Shared items only: the teams it is wired to (by team id). Access follows wires, not distance. */
+  wires?: string[];
+  owner?: string | null;
+  /** Which of the quarters' 4 slots, when owned. */
+  slot?: number | null;
+  /** Chamber only: the sample drive this chamber's data cable runs to (layout, not state). */
+  link?: string | null;
+  /** Drive only: the chamber it was detected for. */
+  chamber?: string | null;
 }
 
 export interface Need {
@@ -100,3 +116,22 @@ export interface Settings {
   alwaysShowNames: boolean;
   thoughts: 'icons' | 'always' | 'off';
 }
+
+// Round 3 (isolation chamber and meeting space). Layout (x, y) is UI state. Phase, green, status and
+// satisfied are read only from the event fold (src/model/facility.ts): today from a scripted stream,
+// later from `mero serve`.
+export type FacilityKind = 'team' | 'chamber' | 'meeting' | 'drive';
+export type Wire = { id: string; from: string; to: string; kind: 'data' | 'dep' | 'drive' };
+export type DriveInfo = { id: string; label: string; bus: 'usb' | 'net' | 'other'; fsUuid: string; present: boolean; simulated: boolean };
+export type ChamberState = {
+  id: string;
+  teams: string[];
+  drive?: DriveInfo;
+  phase: 'empty' | 'drive_seen' | 'sealed' | 'verifying' | 'open' | 'closed';
+  /** Derived from the last chamber.verify; never set by the UI. */
+  green: boolean;
+  purpose?: 'import' | 'work' | 'export' | 'archive';
+};
+export type AgendaItem = { step: number; team: string; what: string; needs?: number; status: 'waiting' | 'running' | 'done' };
+export type Post = { id: number; fromTeam: string; topic: string; status: 'pending' | 'cleared' | 'blocked'; why?: string };
+export type MeetingState = { id: string; teams: string[]; agenda: AgendaItem[]; posts: Post[] };

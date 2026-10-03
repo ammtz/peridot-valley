@@ -1,0 +1,293 @@
+{
+ "_note": "Captured from python -m mero serve (ammtz/MERO, mero/serve.py) on a scratch ledger, 2026-10-03: GET /events?after=0 and GET /views, verbatim.",
+ "events": {
+  "mero": 1,
+  "events": [
+   {
+    "goal": "fix the flaky test",
+    "seq": 1,
+    "at": "2026-10-03T03:11:30.933+00:00",
+    "job": "vic",
+    "event": "run.start",
+    "actor": "vic",
+    "run": "r1",
+    "task": null
+   },
+   {
+    "tier": "t0",
+    "title": "fix test_sim",
+    "seq": 2,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "job": "l2",
+    "event": "task.new",
+    "actor": "l2",
+    "run": "r1",
+    "task": "t1"
+   },
+   {
+    "reason": "cheap first",
+    "samples": {
+     "t0": 0.7
+    },
+    "tier": "t0",
+    "seq": 3,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "job": "jev",
+    "event": "tier.pick",
+    "actor": "jev",
+    "run": "r1",
+    "task": "t1"
+   },
+   {
+    "tier": "t0",
+    "to": "l0:fix-tests",
+    "seq": 4,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "job": "l2",
+    "event": "task.assign",
+    "actor": "l2",
+    "run": "r1",
+    "task": "t1"
+   },
+   {
+    "what": "read the failing test",
+    "seq": 5,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "job": "l0:fix-tests",
+    "event": "step.start",
+    "actor": "l0:fix-tests",
+    "run": "r1",
+    "task": "t1"
+   },
+   {
+    "cost_usd": 0.0021,
+    "model": "haiku",
+    "ms": 900,
+    "reason": "patch",
+    "tier": "t0",
+    "tokens_in": 1200,
+    "tokens_out": 300,
+    "seq": 6,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "job": "l0:fix-tests",
+    "event": "model.call",
+    "actor": "l0:fix-tests",
+    "run": "r1",
+    "task": null
+   },
+   {
+    "cmd": "npm test",
+    "exit": 1,
+    "ok": false,
+    "seq": 7,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "job": "l0:fix-tests",
+    "event": "verify",
+    "actor": "l0:fix-tests",
+    "run": "r1",
+    "task": "t1"
+   },
+   {
+    "cost_usd": 0.0027,
+    "model": "haiku",
+    "ms": 1100,
+    "reason": "retry",
+    "tier": "t0",
+    "tokens_in": 1500,
+    "tokens_out": 400,
+    "seq": 8,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "job": "l0:fix-tests",
+    "event": "model.call",
+    "actor": "l0:fix-tests",
+    "run": "r1",
+    "task": null
+   },
+   {
+    "cmd": "npm test",
+    "exit": 0,
+    "ok": true,
+    "seq": 9,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "job": "l0:fix-tests",
+    "event": "verify",
+    "actor": "l0:fix-tests",
+    "run": "r1",
+    "task": "t1"
+   },
+   {
+    "branch": "claude/fix-tests",
+    "repo": "peridot",
+    "what": "merge claude/fix-tests into main",
+    "seq": 10,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "job": "l0:fix-tests",
+    "event": "approval.ask",
+    "actor": "l0:fix-tests",
+    "run": "r1",
+    "task": "t1"
+   },
+   {
+    "what": "run npm publish",
+    "seq": 11,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "job": "l1:docs",
+    "event": "approval.ask",
+    "actor": "l1:docs",
+    "run": "r1",
+    "task": null
+   },
+   {
+    "text": "looking",
+    "seq": 12,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "job": "you",
+    "event": "note",
+    "actor": "you",
+    "run": "r1",
+    "task": null
+   },
+   {
+    "ask": 11,
+    "decision": "no",
+    "why": "not now",
+    "seq": 13,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "job": "you",
+    "event": "approval.give",
+    "actor": "you",
+    "run": "r1",
+    "task": null
+   },
+   {
+    "action": "git push",
+    "actor": "sys:policy",
+    "class": "network",
+    "verdict": "ask",
+    "why": "network",
+    "seq": 14,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "job": "sys:policy",
+    "event": "policy",
+    "run": "r1",
+    "task": null
+   },
+   {
+    "seq": 15,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "job": "notion-cleanup",
+    "event": "job.start",
+    "actor": "job:notion-cleanup",
+    "run": "jobs",
+    "task": null
+   },
+   {
+    "exit": 0,
+    "seconds": 2.5,
+    "seq": 16,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "job": "notion-cleanup",
+    "event": "job.end",
+    "actor": "job:notion-cleanup",
+    "run": "jobs",
+    "task": null
+   },
+   {
+    "actor": "sys:bus",
+    "kind": "approval.give",
+    "why": "l0 may not send approval.give (only you)",
+    "seq": 17,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "job": "sys:bus",
+    "event": "refused",
+    "run": "r1",
+    "task": null
+   }
+  ],
+  "next": 17
+ },
+ "views": {
+  "mero": 1,
+  "last_seq": 17,
+  "cost": {
+   "usd": 0.0048,
+   "tokens_in": 2700,
+   "tokens_out": 700,
+   "calls": 2,
+   "by_model": {
+    "haiku": 0.0048
+   },
+   "by_tier": {
+    "t0": 0.0048
+   },
+   "by_run": {
+    "r1": 0.0048
+   }
+  },
+  "runs": {
+   "r1": {
+    "goal": "fix the flaky test",
+    "status": "running",
+    "started": "2026-10-03T03:11:30.933+00:00"
+   }
+  },
+  "tasks": {
+   "r1/t1": {
+    "title": "fix test_sim",
+    "state": "todo",
+    "to": "l0:fix-tests",
+    "tier": "t0",
+    "run": "r1",
+    "escalations": 0,
+    "steps": 0
+   }
+  },
+  "open_asks": [
+   10
+  ],
+  "refused": 1,
+  "signoffs": {},
+  "asks": {
+   "10": {
+    "by": "l0:fix-tests",
+    "run": "r1",
+    "task": "t1",
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "branch": "claude/fix-tests",
+    "repo": "peridot",
+    "what": "merge claude/fix-tests into main",
+    "answer": null,
+    "why": null
+   },
+   "11": {
+    "by": "l1:docs",
+    "run": "r1",
+    "task": null,
+    "at": "2026-10-03T03:11:30.934+00:00",
+    "what": "run npm publish",
+    "answer": "no",
+    "why": "not now"
+   }
+  },
+  "policy": {
+   "allow": 0,
+   "ask": 1,
+   "deny": 0,
+   "by_class": {
+    "network": 1
+   }
+  },
+  "blueprints": {},
+  "bad_uses": 0,
+  "moods": {
+   "jev": "working",
+   "job:notion-cleanup": "working",
+   "l0:fix-tests": "unsure",
+   "l1:docs": "working",
+   "l2": "working",
+   "sys:policy": "working",
+   "vic": "working",
+   "you": "working"
+  }
+ }
+}

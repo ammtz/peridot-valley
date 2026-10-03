@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Sim } from '../model/sim';
 import { roomH, roomW } from '../model/seed';
+import { TOUR_STEPS } from '../model/tour';
 
 const card: React.CSSProperties = {
   pointerEvents: 'auto',
@@ -44,7 +45,37 @@ function spotRect(sim: Sim): { l: number; t: number; w: number; h: number } {
     vh = window.innerHeight;
   const fallback = { l: vw / 2 - 60, t: vh / 2 - 60, w: 120, h: 120 };
 
-  if (sim.tourStep === 0) {
+  const spot = TOUR_STEPS[sim.tourStep]?.spot || 'org';
+  const domRect = (...ids: string[]) => {
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0) return { l: r.left - PAD, t: r.top - PAD, w: r.width + PAD * 2, h: r.height + PAD * 2 };
+      }
+    }
+    return null;
+  };
+  if (spot === 'feed') {
+    const feedEl = document.querySelector('[data-feed-panel]') as HTMLElement | null;
+    if (feedEl) {
+      const r = feedEl.getBoundingClientRect();
+      return { l: r.left - 6, t: r.top - 6, w: r.width + 12, h: Math.min(r.height, 140) + 12 };
+    }
+    return { l: vw - 372, t: 10, w: 360, h: 120 };
+  }
+  if (spot === 'toolbar') return domRect('dock-panel', 'desk-add-btn', 'phone-add-btn') || fallback;
+  if (spot === 'team') {
+    const T = sim.m.teams.find((x) => x.state === 'active');
+    if (!T) return fallback;
+    const n = sim.members(T).length;
+    return fromWorldBox(sim, T.x - roomW(n) / 2 - 12, T.y - roomH(n) / 2 - 30, T.x + roomW(n) / 2 + 12, T.y + roomH(n) / 2);
+  }
+  if (spot === 'manager') {
+    const mg = Object.values(sim.m.sups).find((x) => x.id !== 'pip') || sim.m.sups.pip;
+    return fromWorldBox(sim, mg.x - mg.size, mg.y - mg.size, mg.x + mg.size, mg.y + mg.size + 20);
+  }
+  if (spot === 'org') {
     // The whole org: PIP plus every active/pending floor, so the pulse's path is visible.
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     const pip = sim.m.sups.pip;
@@ -60,7 +91,7 @@ function spotRect(sim: Sim): { l: number; t: number; w: number; h: number } {
     return fromWorldBox(sim, x0, y0, x1, y1);
   }
 
-  // stop 1: the stuck agent's floor — the sim already re-centered the camera on it.
+  // the stuck step: the stuck agent's floor — the sim already re-centered the camera on it.
   // U14: this is the tour's last stop; tools and the recorder are taught by the
   // phone "+" sheet's one-time tips instead of a third and fourth stop here.
   const id = sim.tourBlockedAgentId;
