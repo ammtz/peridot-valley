@@ -1,5 +1,6 @@
 import type { Agent, Furniture, Manager, Need, Team, WorldModel } from './types';
 import { CURRENT_V } from './constants';
+import { taskPoolFor } from './scenarios';
 
 type SupSeed = [string, string, string, number, number, number, string | null];
 type AgentSeed = [string, string, string | null, string[], string[], Partial<Agent>?];
@@ -14,7 +15,7 @@ export const SUPS: SupSeed[] = [
 export const TEAMS: TeamSeed[] = [
   [
     'job', 'JOB HUNT', 'dash', 150, 650, 'active',
-    ['Search 3 job boards for roles that fit you', 'Rank the 12 against your must-haves', 'Tailor your resume for the top pick'],
+    taskPoolFor('job'),
     [
       ['SCOUT', 'search', 'Search 3 job boards for roles that fit you', [], ['Found 12 new postings overnight']],
       ['FIT', 'ranking', null, ['Rank the 12 against your must-haves'], ['Dropped 5 that need a security clearance']],
@@ -23,7 +24,7 @@ export const TEAMS: TeamSeed[] = [
   ],
   [
     'inbox', 'INBOX', 'dash', 450, 790, 'active',
-    ['Clear this morning’s inbox', 'Draft replies to 5 open threads', 'Find a slot for the dentist'],
+    taskPoolFor('inbox'),
     [
       ['SORT', 'triage', 'Clear this morning’s inbox', [], ['Filed 20 emails into folders']],
       ['REPLY', 'drafts', null, ['Draft replies to 5 open threads'], ['Answered the landlord’s question']],
@@ -32,7 +33,7 @@ export const TEAMS: TeamSeed[] = [
   ],
   [
     'money', 'MONEY', 'otto', 660, 650, 'active',
-    ['Pay the electric bill before Friday', 'Check for subscriptions you don’t use', 'Scan this week’s card charges'],
+    taskPoolFor('money'),
     [
       ['BILLS', 'payments', 'Pay the electric bill before Friday', [], ['Paid the internet bill on time']],
       ['SUBS', 'subscriptions', null, ['Check for subscriptions you don’t use'], ['Found 2 unused subscriptions, $24 a month']],
@@ -41,7 +42,7 @@ export const TEAMS: TeamSeed[] = [
   ],
   [
     'home', 'HOME', 'otto', 960, 790, 'active',
-    ['Book the kids’ checkups', 'Reorder the weekly groceries', 'Get 3 quotes for the leaky faucet'],
+    taskPoolFor('home'),
     [
       ['KIN', 'appointments', 'Book the kids’ checkups', [], ['Renewed the car registration']],
       ['CART', 'groceries', null, ['Reorder the weekly groceries'], ['Swapped the milk for the brand you like']],
@@ -63,7 +64,7 @@ export function seed(): WorldModel {
   const teams: Team[] = [];
   const agents: Agent[] = [];
   TEAMS.forEach(([id, name, boss, x, y, state, pool, ags]) => {
-    teams.push({ id, name, boss, x, y, state, pool, pi: 0 });
+    teams.push({ id, name, boss, x, y, state, pool, pi: 3 });
     ags.forEach(([n, role, doing, backlog, done, extra]) => {
       agents.push({
         id: id + '-' + n.toLowerCase(),

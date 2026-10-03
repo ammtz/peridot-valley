@@ -1,9 +1,10 @@
 import type { Agent, FeedCard, Furniture, Manager, Mood, Need, NodeKind, Sel, Settings, Team, WorldModel } from './types';
-import { BLOCKERS, CURRENT_V, uid, DOCK_TIP, FEARS, FR, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic, plural } from './constants';
+import { CURRENT_V, MAX_TEAMS_PER_MANAGER, uid, DOCK_TIP, FR, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic, plural } from './constants';
 import { blank, desks, roomH, roomW, seed } from './seed';
 
 const MAX_HELPERS = 6;
 const HELPER_NAMES = ['ACE', 'BEA', 'CAL', 'DOT', 'ELI', 'FAY', 'GUS', 'HAL', 'IRIS', 'JAX', 'KAI', 'LOU', 'MAE', 'NED', 'OLA', 'PIX', 'QUIN', 'ROO'];
+import { fearFor, stuckCaseFor, TASK_POOL_GENERIC } from './scenarios';
 import { genericAgents, genericTeamPool, helperCount, pickPreset, Q2_OPTIONS, type PresetManagerSeed } from './presets';
 import { decide, type DecideState } from './decider';
 import { jobName, tally, tickerText, type MeroEvent } from '../live/events';
@@ -293,7 +294,7 @@ export class Sim {
     mgr.teams.forEach((ts, j) => {
       const tx = mx + (j - (mgr.teams.length - 1) / 2) * 180,
         ty = my + 230;
-      m.teams.push({ id: ts.id, name: ts.name, boss: mgr.id, x: tx, y: ty, state: 'active', pool: ts.pool.slice(), pi: 0, born: t + j * 0.35 });
+      m.teams.push({ id: ts.id, name: ts.name, boss: mgr.id, x: tx, y: ty, state: 'active', pool: ts.pool.slice(), pi: 3, born: t + j * 0.35 });
       ts.agents.forEach((a) => {
         const extra = { ...(a.extra || {}) };
         delete extra.blocked;
@@ -337,10 +338,9 @@ export class Sim {
   }
   private afterHireStep() {
     if (this.hireIndex >= this.hireQueue.length) {
-      this.introPhase = 'addteam';
-      this.addTeamCount = 0;
-      this.addTeamValue = '';
-      this.setSpeech("Anything else you'd like a team for?");
+      // No "anything else?" question: new users get the valley and play with the UI.
+      this.finishHiring();
+      return;
     } else {
       const nx = this.currentHire()!;
       this.setSpeech(nx.name + ' would run ' + nx.runs + ' — ' + plural(nx.teams.length, 'team') + ', ' + plural(helperCount(nx), 'helper'));
@@ -1070,10 +1070,29 @@ export class Sim {
     this.phoneMoodOpen = false;
     this.notify();
   }
+  /** How many teams and sub-managers sit directly under a manager. */
+  managerLoad(id: string) {
+    return this.m.teams.filter((T) => T.boss === id).length + Object.values(this.m.sups).filter((o) => o.boss === id).length;
+  }
+  /** VIC (the chief) has no cap; every other manager holds at most MAX_TEAMS_PER_MANAGER. */
+  managerFull(id: string) {
+    return id !== 'pip' && this.managerLoad(id) >= MAX_TEAMS_PER_MANAGER;
+  }
+  private refuseFull(id: string) {
+    const B = this.m.sups[id];
+    if (!B) return;
+    this.card('ORG', B.name, '', B.name + ' already runs ' + MAX_TEAMS_PER_MANAGER + ' teams, the most one manager can handle. Add a sub-manager or move something to another manager.');
+  }
   reparent(kind: 'team' | 'sup', id: string, bossId: string) {
     const m = this.m,
       B = m.sups[bossId];
     if (!B) return;
+    const already = kind === 'team' ? this.team(id)?.boss === bossId : m.sups[id]?.boss === bossId;
+    if (!already && this.managerFull(bossId)) {
+      this.refuseFull(bossId);
+      this.notify();
+      return;
+    }
     if (kind === 'team') {
       const T = this.team(id);
       if (!T || T.boss === bossId) return;
@@ -1111,6 +1130,11 @@ export class Sim {
   addManager(bossId: string) {
     const m = this.m,
       b = m.sups[bossId] || m.sups.pip;
+    if (this.managerFull(b.id)) {
+      this.refuseFull(b.id);
+      this.notify();
+      return;
+    }
     const used = new Set(Object.values(m.sups).map((s) => s.name));
     const name = MGR_NAMES.find((n) => !used.has(n)) || 'MGR' + Object.keys(m.sups).length;
     const id = uid('m');
@@ -1125,8 +1149,13 @@ export class Sim {
   addTeam(bossId: string) {
     const m = this.m,
       b = m.sups[bossId] || m.sups.pip;
+    if (this.managerFull(b.id)) {
+      this.refuseFull(b.id);
+      this.notify();
+      return;
+    }
     const id = uid('t');
-    m.teams.push({ id, name: 'NEW TEAM', boss: b.id, x: b.x + (Math.random() - 0.5) * 280, y: b.y + 210, state: 'active', pool: ['Review the queue', 'Check in with the lead', 'Tidy up shared notes'], pi: 0, born: NOW() });
+    m.teams.push({ id, name: 'NEW TEAM', boss: b.id, x: b.x + (Math.random() - 0.5) * 280, y: b.y + 210, state: 'active', pool: TASK_POOL_GENERIC.slice(), pi: 0, born: NOW() });
     this.card('ORG', this.pathName(id), '', 'New team floor under ' + b.name + '. Drag agents in to staff it.');
     this.sel = { kind: 'team', id };
     this.popAt = NOW();
@@ -1536,7 +1565,7 @@ export class Sim {
     this.m.needs.unshift(nd);
   }
   makeBlocked(a: Agent) {
-    const [text, fix] = BLOCKERS[a.team] || BLOCKERS._;
+    const [text, fix] = stuckCaseFor(a.name, a.team, a.blocked?.text);
     a.blocked = { text, fix };
     this.removeNeeds(a.id, 'blocked');
     this.pushNeed({ id: uid('nb'), agent: a.id, team: a.team, kind: 'blocked', text: a.name + ' is stuck: ' + text + '.', acts: [[fix, 'unblock'], ['LATER', 'skip']] });
@@ -1544,7 +1573,7 @@ export class Sim {
     this.evLog.push({ t: NOW(), team: a.team, kind: 'stuck', who: a.name, text });
   }
   makeFear(a: Agent) {
-    const f = FEARS[a.team] || FEARS._;
+    const f = fearFor(a.team);
     // "No, just handle it" — PIP resolves most asks itself instead of interrupting you.
     const state: DecideState = { askFirst: this.askFirst, agentName: a.name, team: a.team };
     if (decide('handleOrAsk', state, ['handled', 'ask']) === 'handled') {
@@ -1867,9 +1896,9 @@ export class Sim {
       p.title = s.name;
       const rows = reportRows(s.id);
       p.hasRows = true;
-      p.rowsLabel = 'DIRECT REPORTS';
+      p.rowsLabel = 'TEAMS UNDER MANAGEMENT';
       p.rows = rows;
-      p.rowCount = rows.length;
+      p.rowCount = s.id === 'pip' ? String(rows.length) : rows.length + '/' + MAX_TEAMS_PER_MANAGER;
       p.noRows = !rows.length;
       p.noRowsText = 'No reports yet. Drop a team or manager on ' + s.name + '.';
       if (s.id === 'pip') {
@@ -2351,7 +2380,7 @@ export class Sim {
     const newF = !!(dr && dr.kind === 'newfurn' && dr.moved);
     const overWorld = newF && this.mouse.y < vh - 120 && this.mouse.x < vw - this.feedW();
     const ghost = newF ? { x: this.mouse.x, y: this.mouse.y, kind: dr!.type, t, sc: overWorld ? z : 0.9, label: overWorld ? 'place ' + FT[dr!.type!].name : 'drag onto the floor' } : { x: 0, y: 0, kind: 'mcp' as const, t, sc: 1, label: '' };
-    const reTag = this.hoverMgr && S[this.hoverMgr] ? { x: this.mouse.x + 16, y: this.mouse.y + 18, text: '→ report to ' + S[this.hoverMgr].name } : { x: 0, y: 0, text: '' };
+    const reTag = this.hoverMgr && S[this.hoverMgr] ? { x: this.mouse.x + 16, y: this.mouse.y + 18, text: this.managerFull(this.hoverMgr) ? S[this.hoverMgr].name + ' is full (' + MAX_TEAMS_PER_MANAGER + '/' + MAX_TEAMS_PER_MANAGER + ')' : '→ report to ' + S[this.hoverMgr].name + ' (' + this.managerLoad(this.hoverMgr) + '/' + MAX_TEAMS_PER_MANAGER + ')' } : { x: 0, y: 0, text: '' };
 
     const nowMs = Date.now();
     const ago = (ms: number) => (ms < 10000 ? 'now' : ms < 60000 ? Math.floor(ms / 1000) + 's' : Math.floor(ms / 60000) + 'm');

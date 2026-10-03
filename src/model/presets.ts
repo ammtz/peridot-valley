@@ -1,5 +1,6 @@
 import type { Agent } from './types';
 import { TEAMS } from './seed';
+import { TASK_POOL_GENERIC } from './scenarios';
 
 export interface PresetAgentSeed {
   n: string;
@@ -107,7 +108,7 @@ export function helperCount(mgr: PresetManagerSeed): number {
 }
 
 export function genericTeamPool() {
-  return ['Review the queue', 'Check in with the lead', 'Tidy up shared notes'];
+  return TASK_POOL_GENERIC.slice();
 }
 export function genericAgents(): PresetAgentSeed[] {
   return [

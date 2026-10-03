@@ -4,25 +4,12 @@ export const KEY = 'the-system-live-v4';
 /** T5: bump whenever demo-v2 changes the saved shape, and add the fill-in to Sim.migrate(). */
 export const CURRENT_V = 4;
 
+/** A manager (other than VIC, the chief) can hold at most this many teams and sub-managers. */
+export const MAX_TEAMS_PER_MANAGER = 5;
+
 export const cap = (x: string) => (x ? x[0].toUpperCase() + x.slice(1) : x);
 /** V5: "N word(s)" — pass the plural form only when it isn't just `word + 's'`. */
 export const plural = (n: number, word: string, pluralWord = word + 's') => n + ' ' + (n === 1 ? word : pluralWord);
-
-export const BLOCKERS: Record<string, [string, string]> = {
-  job: ['the job site logged me out', 'LOG BACK IN'],
-  inbox: ['calendar access expired', 'RECONNECT'],
-  money: ['the bank login expired', 'RE-AUTH BANK'],
-  home: ['the grocery site is down', 'TRY AGAIN'],
-  _: ['a login expired', 'RE-AUTH'],
-};
-
-export const FEARS: Record<string, string> = {
-  job: 'sending an application in your name',
-  inbox: 'declining a meeting for you',
-  money: 'cancelling a subscription',
-  home: 'booking the plumber for Tuesday',
-  _: 'doing this without asking',
-};
 
 // U12: one vocabulary for moods — STUCK, UNSURE, SWAMPED, BORED, FLOW. `label` and
 // `tag` used to say two different things for the same mood key; now they agree,

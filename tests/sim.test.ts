@@ -7,6 +7,8 @@ import { Sim } from '../src/model/sim';
 import { seed } from '../src/model/seed';
 import { KEY, NOW } from '../src/model/constants';
 import { decide } from '../src/model/decider';
+import { STUCK_BY_AGENT, STUCK_BY_TEAM, STUCK_GENERIC, TASK_POOLS } from '../src/model/scenarios';
+import { MAX_TEAMS_PER_MANAGER } from '../src/model/constants';
 import { PLANS, Q2_OPTIONS, pickPreset } from '../src/model/presets';
 
 const data = new Map<string, string>();
@@ -83,7 +85,7 @@ test('adding many managers and teams at once gives each a unique id', () => {
   for (let i = 0; i < 12; i++) s.addManager('pip');
   assert.equal(Object.keys(s.m.sups).length, 15);
   const before = s.m.teams.length;
-  for (let i = 0; i < 5; i++) s.addTeam('otto');
+  for (let i = 0; i < 5; i++) s.addTeam('pip');
   assert.equal(new Set(s.m.teams.map((T) => T.id)).size, before + 5);
 });
 
@@ -322,4 +324,36 @@ test('every onboarding answer hires a manager whose teams have unique ids', () =
     assert.equal(new Set(ids).size, ids.length, key);
     for (const m of p.managers) assert.ok(PLANS[m.id] || m.plan, key);
   }
+});
+
+test('a manager holds at most 5 teams; adding and dragging past that is refused, VIC is uncapped', () => {
+  const s = make();
+  while (s.managerLoad('otto') < MAX_TEAMS_PER_MANAGER) s.addTeam('otto');
+  assert.equal(s.managerLoad('otto'), 5);
+  const feedBefore = s.m.feed.length;
+  s.addTeam('otto');
+  s.addManager('otto');
+  assert.equal(s.managerLoad('otto'), 5);
+  assert.ok(s.m.feed.length > feedBefore, 'the refusal leaves a friendly note');
+  const jobTeam = s.team('job')!;
+  s.reparent('team', jobTeam.id, 'otto');
+  assert.equal(jobTeam.boss, 'dash', 'a full manager refuses a moved team');
+  for (let i = 0; i < 8; i++) s.addTeam('pip');
+  assert.equal(s.managerFull('pip'), false);
+});
+
+test('every agent has 3+ stuck cases and every pool is varied; stuck picks vary and name a real action', () => {
+  const s = make();
+  s.m.agents.forEach((a) => assert.ok((STUCK_BY_AGENT[a.name] || []).length >= 3, a.name));
+  Object.values(STUCK_BY_TEAM).forEach((l) => assert.ok(l.length >= 3));
+  assert.ok(STUCK_GENERIC.length >= 3);
+  Object.values(TASK_POOLS).forEach((p) => assert.ok(new Set(p).size >= 10));
+  const seen = new Set<string>();
+  const a = s.m.agents.find((x) => x.name === 'BILLS')!;
+  for (let i = 0; i < 40; i++) {
+    s.makeBlocked(a);
+    seen.add(a.blocked!.fix);
+    assert.notEqual(a.blocked!.fix, 'FIX');
+  }
+  assert.ok(seen.size >= 3);
 });
