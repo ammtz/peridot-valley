@@ -549,6 +549,20 @@ export class Sim {
       return null;
     }
   }
+  /** Autosave from the frame loop: serialize in idle time, not inside a frame. */
+  saveIdle() {
+    this.dirty = false;
+    this.lastSave = NOW();
+    const write = () => {
+      try {
+        localStorage.setItem(KEY, JSON.stringify(this.m));
+      } catch {
+        /* ignore quota / privacy errors */
+      }
+    };
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(write, { timeout: 2000 });
+    else setTimeout(write, 0);
+  }
   save() {
     try {
       localStorage.setItem(KEY, JSON.stringify(this.m));
@@ -572,7 +586,11 @@ export class Sim {
       this.step();
       const t = NOW();
       const dueForHeartbeat = t - lastHeartbeat >= HEARTBEAT;
-      if (this.motion || this.dirty || this.drag || this.pulses.length > 0 || dueForHeartbeat) {
+      // Lag fix (2026-10-03): bobbing, blinking, auras and sparkles are all functions of the clock,
+      // so with nobody walking `motion` was false and the whole valley dropped to the 4 Hz heartbeat,
+      // then jumped back to 60 Hz when a helper moved or a pulse fired. Ambient animation now draws
+      // on every frame; only reduced-motion users (no ambient motion) keep the cheap heartbeat.
+      if (!this.reducedMotion || this.motion || this.dirty || this.drag || this.pulses.length > 0 || dueForHeartbeat) {
         if (dueForHeartbeat) lastHeartbeat = t;
         this.renderTicks++;
         this.notify();
@@ -1428,7 +1446,7 @@ export class Sim {
     });
     this.tickRecorders(t);
     if (this.evLog.length > 400) this.evLog = this.evLog.slice(-300);
-    if (this.dirty && t - this.lastSave > 1.5 && !this.drag) this.save();
+    if (this.dirty && t - this.lastSave > 1.5 && !this.drag) this.saveIdle();
   }
   tickRecorders(t: number) {
     this.m.furn.forEach((F) => {
