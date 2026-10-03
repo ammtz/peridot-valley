@@ -1,7 +1,17 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function Links({ lines, ghosts, pulses }: { lines: any[]; ghosts: any[]; pulses: any[] }) {
+export function Links({ lines, ghosts, pulses, wires }: { lines: any[]; ghosts: any[]; pulses: any[]; wires?: any[] }) {
   return (
     <>
+      {wires && wires.length > 0 && (
+        <svg width="1" height="1" style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none' }}>
+          {wires.map((w) => (
+            <g key={w.id}>
+              <polyline points={w.pts} fill="none" stroke="#15140f" strokeOpacity={w.on ? 0.85 : 0.5} strokeWidth={w.on ? 2.6 : 2} strokeLinejoin="round" strokeLinecap="round" />
+              <circle cx={w.dot[0]} cy={w.dot[1]} r={3} fill="#15140f" />
+            </g>
+          ))}
+        </svg>
+      )}
       {lines.map((ln, i) => (
         <div
           key={i}

@@ -8,7 +8,7 @@ import { Dock } from './Dock';
 // before it would crowd the pill (2026-09-27, after the dock covered the pill and zoom).
 // Measured widths (px) at 1440x900, plus a little slack.
 const PILL = 240;
-const DOCK_FULL = 420;
+const DOCK_FULL = 440;
 const ZOOM_FULL = 305;
 const ZOOM_FITRESET = 175;
 

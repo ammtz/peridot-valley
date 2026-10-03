@@ -60,6 +60,8 @@ export interface Furniture {
   /** Set while a builder worker is putting this up. Not kept across reloads. */
   build?: { start: number; dur: number; team: string | null } | null;
   /** The team whose quarters this sits in (its own slot), or null for a shared, cross-team facility. */
+  /** Shared items only: the teams it is wired to (by team id). Access follows wires, not distance. */
+  wires?: string[];
   owner?: string | null;
   /** Which of the quarters' 4 slots, when owned. */
   slot?: number | null;

@@ -51,7 +51,7 @@ export function TitleBar({ agentCount, mgrCount, rv }: { agentCount: number; mgr
         ))}
       </div>
       <div style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: '.02em', color: '#6b6a62' }}>
-        drag anything · drop a team or manager on a manager to re-org · tap to open
+        {rv.builder ? 'builder mode · drag to re-org, drop tools in, press + to wire · B to leave' : 'tap anything to open · press B for builder mode'}
       </div>
     </div>
   );

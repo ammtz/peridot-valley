@@ -82,3 +82,10 @@ export const DOCK_TIP: Record<FurnKind, string> = {
 /** Demo time compression for the recorder: index-matched to FT.rec.opts. `null` = event-triggered, not periodic. */
 export const REC_DEMO_SECS: (number | null)[] = [45, 90, 180, null];
 export const REC_LABELS = ['last 10 min', 'last hour', 'today', 'since last check'];
+
+/**
+ * Facility registry seam: one row per FurnKind (see FT above). A new tool type adds an FT entry and,
+ * only if it breaks the defaults, a row here. Default: can sit in a team's quarters (team only) or
+ * outside (shared, wired with plugs).
+ */
+export const FACILITY_RULES: Partial<Record<FurnKind, { teamOnly?: boolean; sharedOnly?: boolean; buildScale?: number }>> = {};

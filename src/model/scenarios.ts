@@ -226,3 +226,17 @@ export function fearFor(teamId: string): string {
 export function taskPoolFor(teamId: string): string[] {
   return (TASK_POOLS[teamId] || TASK_POOL_GENERIC).slice();
 }
+
+const GREEK = ['ALPHA', 'BETA', 'GAMMA', 'DELTA', 'EPSILON', 'ZETA', 'ETA', 'THETA', 'IOTA', 'KAPPA', 'LAMBDA', 'MU', 'NU', 'XI', 'OMICRON', 'PI', 'RHO', 'SIGMA', 'TAU', 'UPSILON', 'PHI', 'CHI', 'PSI', 'OMEGA'];
+const ROMAN = ['', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+
+/** "TEAM ALPHA", "TEAM BETA", ... skipping names already in use; after OMEGA, "TEAM ALPHA II" and so on. */
+export function nextTeamName(used: Iterable<string>): string {
+  const taken = new Set([...used].map((n) => n.toUpperCase()));
+  for (let round = 0; round < ROMAN.length; round++)
+    for (const g of GREEK) {
+      const name = 'TEAM ' + g + (ROMAN[round] ? ' ' + ROMAN[round] : '');
+      if (!taken.has(name)) return name;
+    }
+  return 'TEAM ' + (taken.size + 1);
+}

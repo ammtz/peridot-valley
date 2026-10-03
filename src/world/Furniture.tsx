@@ -10,6 +10,16 @@ export function Furniture({ fu }: { fu: any }) {
       <div onPointerDown={fu.down} style={{ position: 'absolute', left: -24, top: -24, width: 48, height: 48, cursor: 'grab', transform: `scale(${fu.sc})`, opacity: fu.building ? 0.35 + 0.4 * fu.prog : 1 }}>
         <FurnitureIcon kind={fu.kind} t={fu.t} />
       </div>
+      {fu.plus && (
+        <button
+          aria-label="Wire this to a team: press, then click a team's plug"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={fu.startWire}
+          style={{ position: 'absolute', left: 14, top: -34, width: 44, height: 44, padding: 0, background: 'transparent', border: 'none', cursor: 'pointer', zIndex: 6 }}
+        >
+          <span style={{ position: 'absolute', left: 12, top: 12, width: 20, height: 20, borderRadius: 7, border: '2px solid #15140f', background: fu.wiringThis ? '#e8b923' : '#15140f', color: fu.wiringThis ? '#15140f' : '#f4f3ee', fontWeight: 800, fontSize: 15, lineHeight: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{fu.wiringThis ? '×' : '+'}</span>
+        </button>
+      )}
       {fu.building && (
         <>
           <div style={{ position: 'absolute', left: -20, top: fu.owned ? 12 : 28, width: 40, height: 5, borderRadius: 3, border: '1.5px solid #15140f', background: '#fbfaf5', overflow: 'hidden', pointerEvents: 'none' }}>

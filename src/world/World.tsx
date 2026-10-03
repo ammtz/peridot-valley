@@ -18,7 +18,11 @@ export function World({ sim, rv }: { sim: Sim; rv: any }) {
         if (e.key === 'Escape') (e.target as HTMLElement).blur();
         return;
       }
-      if (e.key === 'Escape') sim.sel = null;
+      if (e.key === 'Escape') {
+        sim.sel = null;
+        sim.wiring = null;
+      }
+      if ((e.key === 'b' || e.key === 'B') && !e.metaKey && !e.ctrlKey && !(e.target instanceof HTMLInputElement)) sim.toggleBuilder();
       if ((e.key === 'f' || e.key === 'F') && !e.metaKey && !e.ctrlKey) sim.fitView();
       sim.notify();
     };
@@ -45,13 +49,13 @@ export function World({ sim, rv }: { sim: Sim; rv: any }) {
       onPointerDown={(e) => sim.bgDown(e)}
       style={{
         position: 'fixed', inset: 0, overflow: 'hidden', touchAction: 'none', userSelect: 'none',
-        fontFamily: "'JetBrains Mono', ui-monospace, monospace", color: '#15140f', background: '#f4f3ee',
-        backgroundImage: 'radial-gradient(rgba(21,20,15,.13) 1.4px, transparent 1.4px)',
+        fontFamily: "'JetBrains Mono', ui-monospace, monospace", color: '#15140f', background: rv.builder ? '#f6f1e2' : '#f4f3ee',
+        backgroundImage: rv.builder ? 'radial-gradient(rgba(21,20,15,.28) 1.6px, transparent 1.6px)' : 'radial-gradient(rgba(21,20,15,.13) 1.4px, transparent 1.4px)', boxShadow: rv.builder ? 'inset 0 0 0 4px rgba(232,185,35,.7)' : 'none',
         backgroundSize: `${rv.gridSize}px ${rv.gridSize}px`, backgroundPosition: `${rv.panX}px ${rv.panY}px`, cursor: rv.bgCursor,
       }}
     >
       <div style={{ position: 'absolute', left: 0, top: 0, width: 0, height: 0, transform: `translate(${rv.panX}px,${rv.panY}px) scale(${rv.zoom})`, transformOrigin: '0 0', willChange: 'transform' }}>
-        <Links lines={rv.lines} ghosts={rv.ghosts} pulses={rv.pulses} />
+        <Links lines={rv.lines} ghosts={rv.ghosts} pulses={rv.pulses} wires={rv.wires} />
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         {rv.furn.filter((fu: any) => !fu.owned).map((fu: any) => (
           <Furniture key={fu.id} fu={fu} />

@@ -43,6 +43,26 @@ export function Room({ r }: { r: any }) {
       {r.desks.map((d: any, i: number) => (
         <div key={i} style={{ position: 'absolute', left: d.l, top: d.t, width: 20, height: 5, borderRadius: 2, background: d.c, pointerEvents: 'none' }} />
       ))}
+      {/* Wall plugs: one on each side. Subtle at rest; lit and clickable while an item is being wired. */}
+      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+      {(r.plugs || []).map((pl: any) => {
+        const face = (
+          <span style={{ position: 'absolute', left: 13, top: 9, width: 18, height: 26, borderRadius: 6, border: '2px solid #15140f', background: pl.wired ? '#e8b923' : pl.armed ? '#fbfaf5' : pl.used ? '#15140f' : 'rgba(251,250,245,.9)', boxShadow: pl.armed ? '0 0 0 5px rgba(232,185,35,.45)' : 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+            <span style={{ width: 8, height: 2.5, borderRadius: 1, background: pl.used && !pl.wired && !pl.armed ? '#f4f3ee' : '#15140f' }} />
+            <span style={{ width: 8, height: 2.5, borderRadius: 1, background: pl.used && !pl.wired && !pl.armed ? '#f4f3ee' : '#15140f' }} />
+          </span>
+        );
+        const box: React.CSSProperties = { position: 'absolute', left: pl.left - 13, top: pl.top - 9, width: 44, height: 44, zIndex: 4 };
+        return pl.armed ? (
+          <button key={pl.side} aria-label={(pl.wired ? 'Unplug from ' : 'Plug into ') + r.name + (pl.side < 0 ? ' left side' : ' right side')} onPointerDown={(e) => e.stopPropagation()} onClick={pl.go} style={{ ...box, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer' }}>
+            {face}
+          </button>
+        ) : (
+          <span key={pl.side} aria-hidden="true" style={{ ...box, pointerEvents: 'none' }}>
+            {face}
+          </span>
+        );
+      })}
       {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
       {r.agents.map((a: any) => (
         <Agent key={a.id} a={a} />

@@ -87,8 +87,8 @@ export function seed(): WorldModel {
     { id: 'f1', kind: 'DONE', path: 'DASH › JOB HUNT', who: 'SCOUT', text: 'Found 12 new postings overnight', ts: d - 300000 },
   ];
   const furn: Furniture[] = [
-    { id: 'fx-db', type: 'db', x: 300, y: 730, on: [true, true, false, false] },
-    { id: 'fx-mcp', type: 'mcp', x: 810, y: 720, on: [true, false, true, false, false] },
+    { id: 'fx-db', type: 'db', x: 300, y: 730, on: [true, true, false, false], wires: ['job', 'inbox'] },
+    { id: 'fx-mcp', type: 'mcp', x: 810, y: 720, on: [true, false, true, false, false], wires: ['money', 'home'] },
   ];
   return { v: CURRENT_V, sups, teams, agents, furn, needs: NEEDS.map((n) => ({ ...n })), feed };
 }

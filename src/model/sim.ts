@@ -1,9 +1,18 @@
 import type { Agent, FeedCard, Furniture, Manager, Mood, Need, NodeKind, Sel, Settings, Team, WorldModel } from './types';
-import { CURRENT_V, MAX_TEAMS_PER_MANAGER, uid, DOCK_TIP, FR, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic, plural } from './constants';
+import { CURRENT_V, MAX_TEAMS_PER_MANAGER, uid, DOCK_TIP, FR, FACILITY_RULES, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic, plural } from './constants';
+import { TOUR_STEPS } from './tour';
+import { routeWire } from '../lib/route';
 import { blank, desks, roomH, roomW, seed } from './seed';
 
 const MAX_HELPERS = 6;
 const CELEBRATE_SECS = 3.6;
+/** Who produced a feed card: "— TEAM BETA · SCOUT". The team is the last step of the card's path. */
+function signature(c: FeedCard): string {
+  const team = (c.path || '').split(' › ').pop() || '';
+  const who = (c.who || '').trim();
+  const parts = [team, who].filter(Boolean);
+  return parts.length ? '— ' + parts.join(' · ') : '';
+}
 /** Building takes time, like it does in real life. Inside a team's quarters it is just a folder; a shared
  *  facility needs an API between teams, so it takes about twice as long and grows with each team it serves. */
 const BUILD_SECS_TEAM = 3.2;
@@ -12,7 +21,7 @@ const BUILD_SECS_PER_EXTRA_TEAM = 1.2;
 const ACK_SECS = 1.4;
 const SLOTS = 4;
 const HELPER_NAMES = ['ACE', 'BEA', 'CAL', 'DOT', 'ELI', 'FAY', 'GUS', 'HAL', 'IRIS', 'JAX', 'KAI', 'LOU', 'MAE', 'NED', 'OLA', 'PIX', 'QUIN', 'ROO'];
-import { fearFor, stuckCaseFor, TASK_POOL_GENERIC } from './scenarios';
+import { fearFor, nextTeamName, stuckCaseFor, TASK_POOL_GENERIC } from './scenarios';
 import { genericAgents, genericTeamPool, helperCount, pickPreset, Q2_OPTIONS, type PresetManagerSeed } from './presets';
 import { decide, type DecideState } from './decider';
 import { jobName, tally, tickerText, type MeroEvent } from '../live/events';
@@ -35,6 +44,8 @@ interface DragState {
   ox: number;
   oy: number;
   moved: boolean;
+  /** View mode: a press on a node selects it, but dragging it pans the valley instead. */
+  view?: boolean;
 }
 
 interface DragPos {
@@ -150,6 +161,10 @@ export class Sim {
   reducedMotion = false;
   /** Agent id -> when its unblock celebration began (seconds, NOW()). Not saved. */
   celebrating: Record<string, number> = {};
+  /** Id of the shared item being wired right now, or null. */
+  wiring: string | null = null;
+  /** Builder mode: everything that edits the valley (rename, hire, add, drag to re-org, place, wire, delete). Off by default. */
+  builder = false;
   /** Agent id -> when it acknowledges a freshly built facility. Not saved. */
   acking: Record<string, number> = {};
   /** Set by renderVals() when anything is animating this frame; start() then redraws every frame. */
@@ -404,7 +419,7 @@ export class Sim {
     this.tourStepStart = NOW();
     this.tourWaiting = false;
     this.fitView(this.tourBottomInset(), 1.15);
-    this.setSpeech('Everyone reports up to me. When work is finished, it travels these lines and I tell you.');
+    this.setSpeech(TOUR_STEPS[0].text(typeof window !== 'undefined' && window.innerWidth < 560));
     this.forceCompletionForTour();
     this.notify();
   }
@@ -429,15 +444,17 @@ export class Sim {
   }
   tourNext() {
     if (!this.tourCanNext()) return;
-    if (this.tourStep === 0) {
-      this.tourStep = 1;
-      this.tourStepStart = NOW();
-      this.setSpeech('Colour shows how each helper is doing, and red means stuck. One is stuck now; tap it to step in.');
-      this.forceBlockForTour();
-    } else if (this.tourStep === 1) {
+    const next = this.tourStep + 1;
+    if (next >= TOUR_STEPS.length) {
       this.tourEnd();
       return;
     }
+    this.tourStep = next;
+    this.tourStepStart = NOW();
+    const phone = typeof window !== 'undefined' && window.innerWidth < 560;
+    this.setSpeech(TOUR_STEPS[next].text(phone));
+    if (TOUR_STEPS[next].id === 'fix') this.forceBlockForTour();
+    else if (next > 1) this.fitView(this.tourBottomInset(), 1.15);
     this.notify();
   }
   tourAdvanceAfterFix() {
@@ -448,7 +465,8 @@ export class Sim {
     this.tourStep = 0;
     this.m.onboarded = true;
     const phone = typeof window !== 'undefined' && window.innerWidth < 560;
-    this.setSpeech(phone ? "It's yours now. Tap + to add teams; I'll be up here." : "It's yours now. Hire more from the dock; I'll be up here.");
+    this.builder = false;
+    this.setSpeech(phone ? "It's yours now. Tap + for tools, and turn on Builder mode to edit." : "It's yours now. Press B for Builder mode when you want to add or change things; I'll be up here.");
     this.dirty = true;
     // Phone: the tour left the camera framed on its last stop. Refit so nothing
     // sits clipped at the screen edge once the chrome (dock, feed) settles back in.
@@ -552,6 +570,8 @@ export class Sim {
         f.born = null;
         f.build = null;
         f.lastRecapT = null;
+        // Saves from before wires: connect what the old radius used to reach, once.
+        if (!f.wires && !f.owner) f.wires = (s.teams as Team[]).filter((T) => T.state !== 'hidden' && Math.hypot(f.x - T.x, f.y - T.y) < FR).map((T) => T.id);
       });
       s.agents.forEach((a: Agent) => {
         a.flowUntil = 0;
@@ -869,11 +889,11 @@ export class Sim {
       ox = p.x;
       oy = p.y;
     }
-    this.drag = { kind, id, sx: e.clientX, sy: e.clientY, ox, oy, moved: false };
+    this.drag = { kind, id, sx: e.clientX, sy: e.clientY, ox, oy, moved: false, view: !this.builder && kind !== 'ghost' };
   }
   dockDown(e: React.PointerEvent, type: Furniture['type']) {
     e.stopPropagation();
-    if (e.button > 0) return;
+    if (e.button > 0 || !this.builder) return;
     this.drag = { kind: 'newfurn', type, sx: e.clientX, sy: e.clientY, ox: 0, oy: 0, moved: false };
     this.mouse = { x: e.clientX, y: e.clientY };
   }
@@ -915,6 +935,12 @@ export class Sim {
       dy = e.clientY - D.sy;
     if (!D.moved && Math.hypot(dx, dy) > 4) D.moved = true;
     if (!D.moved) return;
+    if (D.view) {
+      D.kind = 'pan';
+      D.view = false;
+      D.ox = this.pan.x;
+      D.oy = this.pan.y;
+    }
     const z = this.zoom,
       w = this.toWorld(e.clientX, e.clientY);
     if (D.kind === 'pan') this.pan = { x: D.ox + dx, y: D.oy + dy };
@@ -976,7 +1002,10 @@ export class Sim {
       }
       if (w) this.placeFurn(D.type!, w.x, w.y);
     } else if (!D.moved) {
-      if (D.kind === 'pan') this.sel = null;
+      if (D.kind === 'pan') {
+        this.sel = null;
+        this.wiring = null;
+      }
       else if (D.kind === 'ghost') this.select({ kind: 'sup', id: 'pip' });
       else this.select({ kind: D.kind as NodeKind, id: D.id! });
     } else {
@@ -1037,7 +1066,59 @@ export class Sim {
       const own = this.team(F.owner);
       return own && own.state !== 'hidden' ? [own] : [];
     }
-    return this.m.teams.filter((T) => T.state !== 'hidden' && Math.hypot(F.x - T.x, F.y - T.y) < FR);
+    // Shared: access follows wires, never distance.
+    const w = F.wires || [];
+    return this.m.teams.filter((T) => T.state !== 'hidden' && w.includes(T.id));
+  }
+  /** World position and side of a team box's wall plug. Left plug when the item sits left of the team, else right. */
+  plugPoint(T: Team, side: -1 | 1): [number, number] {
+    const w = roomW(this.members(T).length);
+    return [T.x + side * (w / 2 + 3), T.y];
+  }
+  /** Start wiring: the next plug you click connects (or, if already wired, unplugs) this item. */
+  toggleBuilder(on?: boolean) {
+    this.builder = on ?? !this.builder;
+    if (!this.builder) {
+      this.wiring = null;
+      if (this.drag && this.drag.kind !== 'pan') this.drag = null;
+    }
+    this.notify();
+  }
+  startWiring(id: string) {
+    const F = this.furnById(id);
+    if (!this.builder || !F || F.owner || F.build) return;
+    this.wiring = this.wiring === id ? null : id;
+    this.sel = null;
+    this.notify();
+  }
+  cancelWiring() {
+    if (this.wiring) {
+      this.wiring = null;
+      this.notify();
+    }
+  }
+  plugClick(teamId: string) {
+    const F = this.wiring ? this.furnById(this.wiring) : null;
+    const T = this.team(teamId);
+    if (!F || !T) return;
+    F.wires = F.wires || [];
+    if (F.wires.includes(teamId)) {
+      this.unplug(F.id, teamId);
+    } else {
+      F.wires.push(teamId);
+      this.card('EQUIP', FT[F.type].name, '', FT[F.type].name + ' is wired to ' + T.name + '. Agents there have a path to it now.');
+    }
+    // Stay in wiring mode so several teams can be connected in a row; Esc or a click elsewhere ends it.
+    this.dirty = true;
+    this.notify();
+  }
+  unplug(furnId: string, teamId: string) {
+    const F = this.furnById(furnId);
+    if (!F || !F.wires) return;
+    F.wires = F.wires.filter((x) => x !== teamId);
+    this.card('EQUIP', FT[F.type].name, '', FT[F.type].name + ' was unplugged from ' + (this.team(teamId)?.name || 'a team') + '.');
+    this.dirty = true;
+    this.notify();
   }
   /** The team whose quarters (the room rectangle) contain this point. */
   quartersAt(x: number, y: number): Team | null {
@@ -1057,9 +1138,13 @@ export class Sim {
   }
   /** After a drop (new or moved): into quarters means a slot and a team-only build; outside means shared and costlier. */
   settleFurn(F: Furniture, isNew = false) {
+    const rules = FACILITY_RULES[F.type] || {};
     const q = this.quartersAt(F.x, F.y);
     let owner: string | null = null;
-    if (q) {
+    if (q && rules.sharedOnly) {
+      F.y = q.y + roomH(this.members(q).length) / 2 + 52;
+      this.card('EQUIP', q.name, '', FT[F.type].name + ' is always shared, so it went outside the quarters.');
+    } else if (q) {
       const taken = new Set(this.m.furn.filter((o) => o.id !== F.id && o.owner === q.id).map((o) => o.slot));
       let best = -1,
         bd = 1e9;
@@ -1087,15 +1172,17 @@ export class Sim {
     const changed = (F.owner ?? null) !== owner;
     F.owner = owner;
     if (!owner) F.slot = null;
+    if (owner) F.wires = [];
+    else if (!F.wires) F.wires = [];
     if (isNew || changed) this.startBuild(F);
   }
   startBuild(F: Furniture) {
     const t = NOW();
-    const reach = F.owner ? 1 : Math.max(1, this.m.teams.filter((T) => T.state !== 'hidden' && Math.hypot(F.x - T.x, F.y - T.y) < FR).length);
-    const dur = F.owner ? BUILD_SECS_TEAM : BUILD_SECS_SHARED + (reach - 1) * BUILD_SECS_PER_EXTRA_TEAM;
+    const reach = F.owner ? 1 : Math.max(1, (F.wires || []).length);
+    const dur = (F.owner ? BUILD_SECS_TEAM : BUILD_SECS_SHARED + (reach - 1) * BUILD_SECS_PER_EXTRA_TEAM) * (FACILITY_RULES[F.type]?.buildScale ?? 1);
     F.build = { start: t, dur: this.reducedMotion ? Math.min(dur, 1.2) : dur, team: F.owner ?? null };
     const where = F.owner ? this.team(F.owner)?.name : null;
-    this.card('EQUIP', FT[F.type].name, '', where ? 'A builder is setting up ' + FT[F.type].name.toLowerCase() + ' inside ' + where + '. Team only, quick.' : 'A builder is wiring a shared ' + FT[F.type].name.toLowerCase() + ' between teams. It needs an API, so it takes longer.');
+    this.card('EQUIP', FT[F.type].name, '', where ? 'A builder is setting up ' + FT[F.type].name.toLowerCase() + ' inside ' + where + '. Team only, quick.' : 'A builder is setting up a shared ' + FT[F.type].name.toLowerCase() + '. Press its + then a team’s plug to wire it.');
   }
   /** Builders finish: the facility goes live, and each agent it serves reads the new context. */
   tickBuilds(t: number) {
@@ -1150,6 +1237,7 @@ export class Sim {
   }
   /** Phone (U2): the "+" sheet taps a tool tile instead of dragging one off a dock. */
   placeFurnFromSheet(type: Furniture['type']) {
+    if (!this.builder) return;
     const vw = window.innerWidth,
       vh = window.innerHeight;
     const w = this.toWorld(vw / 2 + (Math.random() - 0.5) * 70, vh / 2 + (Math.random() - 0.5) * 60);
@@ -1268,7 +1356,7 @@ export class Sim {
       return;
     }
     const id = uid('t');
-    m.teams.push({ id, name: 'NEW TEAM', boss: b.id, x: b.x + (Math.random() - 0.5) * 280, y: b.y + 210, state: 'active', pool: TASK_POOL_GENERIC.slice(), pi: 0, born: NOW() });
+    m.teams.push({ id, name: nextTeamName(m.teams.map((T) => T.name)), boss: b.id, x: b.x + (Math.random() - 0.5) * 280, y: b.y + 210, state: 'active', pool: TASK_POOL_GENERIC.slice(), pi: 0, born: NOW() });
     this.card('ORG', this.pathName(id), '', 'New team floor under ' + b.name + '. Drag agents in to staff it.');
     this.sel = { kind: 'team', id };
     this.popAt = NOW();
@@ -1665,8 +1753,10 @@ export class Sim {
     return this.m.needs.filter((n) => !n.snoozeUntil || n.snoozeUntil <= t);
   }
   /** The open-asks row shape shared by PIP's popup and the feed's pinned-asks section (U13). */
-  needCards() {
-    return this.visibleNeeds().map((nd) => ({
+  needCards(underMgr?: string) {
+    return this.visibleNeeds()
+      .filter((nd) => !underMgr || this.isUnder(this.team(nd.team)?.boss || 'pip', underMgr))
+      .map((nd) => ({
       path: this.pathName(nd.team),
       text: nd.text,
       acts: nd.acts.map(([label, action], i) => ({ label, bg: i === 0 ? '#15140f' : 'transparent', fg: i === 0 ? '#f4f3ee' : '#15140f', go: () => this.act(nd, action) })),
@@ -1811,9 +1901,12 @@ export class Sim {
       r = 0;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const p: any = { needs: [], rows: [], members: [], secs: [], acts: [], bossChips: [], equip: [], opts: [] };
-    const btn = (label: string, go: () => void, kind?: 'primary' | 'danger') => ({
+    const B = this.builder;
+    p.builder = B;
+    const btn = (label: string, go: () => void, kind?: 'primary' | 'danger', off = false) => ({
       label,
-      go,
+      go: off ? () => {} : go,
+      off,
       bg: kind === 'primary' ? '#15140f' : 'transparent',
       fg: kind === 'danger' ? '#9a3b2c' : kind === 'primary' ? '#f4f3ee' : '#15140f',
       bc: kind === 'danger' ? '#9a3b2c' : '#15140f',
@@ -1833,7 +1926,7 @@ export class Sim {
         .forEach((s) =>
           rows.push({
             name: s.name,
-            stat: 'manager · ' + plural(m.teams.filter((T) => T.boss === s.id).length + Object.values(m.sups).filter((o) => o.boss === s.id).length, 'report'),
+            stat: 'supervisor · ' + plural(m.teams.filter((T) => T.boss === s.id).length + Object.values(m.sups).filter((o) => o.boss === s.id).length, 'report'),
             dotR: '50%',
             dotBg: '#15140f',
             go: () => this.select({ kind: 'sup', id: s.id }),
@@ -1871,7 +1964,7 @@ export class Sim {
         pend = T.state === 'pending';
       p.title = a.name;
       p.sub = this.pathName(T.id) + ' · ' + a.role;
-      p.equip = equipRows(T);
+      p.equip = B ? equipRows(T) : [];
       const md = pend ? 'pending' : this.mood(a, t),
         th = this.thought(a, md);
       p.hasMood = true;
@@ -1894,9 +1987,9 @@ export class Sim {
             : []
           : md === 'stalled'
             ? [btn('GO AHEAD', wrap(() => this.approve(a)), 'primary'), btn('HOLD OFF', wrap(() => this.hold(a)))]
-            : md === 'overwhelmed' && mates.length
+            : B && md === 'overwhelmed' && mates.length
               ? [btn('SPLIT LOAD', wrap(() => this.splitLoad(a)), 'primary')]
-              : md === 'bored'
+              : B && md === 'bored'
                 ? [btn('GIVE WORK', wrap(() => this.giveWork(a)), 'primary')]
                 : [];
       p.hasMoodActs = p.moodActs.length > 0;
@@ -1905,7 +1998,9 @@ export class Sim {
         ? 'Waiting on your signature. Open VIC to sign.'
         : this.isMeroCreature(a)
           ? 'Real MERO agent: it moves only on ledger events. Answer its asks with mero approve.'
-          : 'Drag me onto another floor to reassign.';
+          : B
+            ? 'Drag me onto another floor to reassign.'
+            : '';
     } else if (sel.kind === 'team') {
       const T = this.team(sel.id);
       if (!T) return null;
@@ -1914,17 +2009,19 @@ export class Sim {
       wy = T.y;
       r = roomW(mem.length) / 2;
       p.title = T.name;
-      p.sub = (this.chain(T.boss).join(' › ') || 'VIC') + ' · ' + plural(mem.length, 'agent');
-      p.hasEdit = true;
+      p.sub = 'Reports to ' + (m.sups[T.boss]?.name || 'VIC') + ' · ' + plural(mem.length, 'agent');
+      p.hasEdit = B;
       p.nameVal = T.name;
+      p.nameMax = 16;
       p.onName = (v: string) => {
         T.name = (v || '').toUpperCase();
         this.dirty = true;
         this.notify();
       };
-      p.hasBoss = true;
+      p.hasBoss = B;
+      p.bossLabel = 'MANAGED BY';
       p.bossChips = chips(T.boss, Object.values(m.sups), (id) => this.reparent('team', T.id, id));
-      p.isTeam = mem.length > 0;
+      p.isTeam = B && mem.length > 0;
       p.memberCount = mem.length;
       const moods: Record<string, number> = {};
       p.members = mem.map((a) => {
@@ -1932,11 +2029,11 @@ export class Sim {
         moods[md] = (moods[md] || 0) + 1;
         return { name: a.name + (MOOD[md].tag ? ' · ' + MOOD[md].tag : ''), go: () => this.select({ kind: 'agent', id: a.id }) };
       });
-      if (mem.length) {
+      if (B && mem.length) {
         p.hasDesc = true;
         p.desc = 'Mood: ' + Object.keys(moods).map((k) => moods[k] + ' ' + MOOD[k as Mood].label.toLowerCase()).join(' · ');
       }
-      p.equip = equipRows(T);
+      p.equip = B ? equipRows(T) : [];
       const doing: { text: string; tag?: string }[] = [],
         backlog: { text: string; tag?: string }[] = [],
         done: { text: string; tag?: string }[] = [];
@@ -1947,10 +2044,11 @@ export class Sim {
       });
       if (mem.length) p.secs = this.secs(t, doing, backlog, done.slice(0, 6));
       // 2026-09-27: a team can take one more helper at a time, up to MAX_HELPERS.
+      // The hire button is pinned above the scrolling body, so nobody scrolls to hire.
+      if (B) p.pin = [btn(mem.length < MAX_HELPERS ? '+ HIRE A HELPER' : 'TEAM IS FULL (' + MAX_HELPERS + ')', () => this.addHelper(T.id), 'primary', mem.length >= MAX_HELPERS)];
       p.acts = [];
-      if (mem.length < MAX_HELPERS) p.acts.push(btn('+ HELPER', () => this.addHelper(T.id), 'primary'));
-      if (!mem.length) p.acts.push(btn('DELETE FLOOR', () => this.deleteTeam(T.id), 'danger'));
-      p.hint = T.state === 'pending' ? 'Pending your signature. Open VIC to sign.' : mem.length ? 'Drag the floor onto a manager to change who it reports to.' : 'Empty floor. Drag agents in from other teams to staff it.';
+      if (B && !mem.length) p.acts.push(btn('DELETE FLOOR', () => this.deleteTeam(T.id), 'danger'));
+      p.hint = T.state === 'pending' ? 'Pending your signature. Open VIC to sign.' : !B ? '' : mem.length ? 'Drag the floor onto a manager to change who it reports to.' : 'Empty floor. Drag agents in from other teams to staff it.';
     } else if (sel.kind === 'furn') {
       const F = this.furnById(sel.id);
       if (!F) return null;
@@ -1960,7 +2058,7 @@ export class Sim {
       r = 26;
       const ts = this.inRange(F);
       p.title = D.name;
-      p.sub = ts.length ? 'serving ' + ts.length + (ts.length === 1 ? ' team' : ' teams') : 'not near any team';
+      p.sub = F.build ? 'being built' : F.owner ? 'inside ' + (this.team(F.owner)?.name || 'a team') + ' · team only' : ts.length ? 'shared · wired to ' + ts.length + (ts.length === 1 ? ' team' : ' teams') : 'shared · not wired to any team yet';
       p.hasDesc = true;
       p.desc = D.desc;
       p.hasOpts = true;
@@ -1972,6 +2070,7 @@ export class Sim {
         fg: F.on[i] ? '#f4f3ee' : '#15140f',
         border: F.on[i] ? '2px solid #15140f' : '2px dashed rgba(21,20,15,.4)',
         go: () => {
+          if (!B) return;
           if (radio) F.on = D.opts.map((_, k) => k === i);
           else F.on[i] = !F.on[i];
           this.dirty = true;
@@ -1995,13 +2094,14 @@ export class Sim {
         }
       }
       p.hasRows = true;
-      p.rowsLabel = 'IN RANGE';
+      p.rowsLabel = F.owner ? 'SERVES' : 'WIRED TO';
       p.rowCount = ts.length;
       p.noRows = !ts.length;
-      p.noRowsText = 'Drag it close to a team floor.';
-      p.rows = ts.map((T) => ({ name: T.name, stat: teamStat(T), dotR: '3px', dotBg: '#fbfaf5', go: () => this.select({ kind: 'team', id: T.id }) }));
-      p.acts = [btn('REMOVE', () => this.deleteFurn(F.id), 'danger')];
-      p.hint = F.build ? 'A builder is on it. It starts working when the bar fills.' : F.owner ? 'Inside ' + (this.team(F.owner)?.name || 'the team') + '’s quarters: it lives in that team’s folder and serves only them. Drag it outside to share it with other teams (slower to wire).' : F.type === 'rec' ? 'It watches; agents don’t walk to it.' : 'Agents on floors inside the dashed ring walk over to use it and finish work faster.';
+      p.noRowsText = F.owner ? 'Team only.' : B ? 'Press WIRE, then click a team plug.' : 'Not wired to any team.';
+      p.rows = ts.map((T) => ({ name: T.name, stat: teamStat(T), dotR: '3px', dotBg: '#fbfaf5', go: () => this.select({ kind: 'team', id: T.id }), actLabel: F.owner || !B ? '' : 'UNPLUG', act: () => this.unplug(F.id, T.id) }));
+      if (B && !F.owner && !F.build) p.pin = [btn('+ WIRE TO A TEAM', () => this.startWiring(F.id), 'primary')];
+      p.acts = B ? [btn('REMOVE', () => this.deleteFurn(F.id), 'danger')] : [];
+      p.hint = F.build ? 'A builder is on it. It starts working when the bar fills.' : F.owner ? 'Inside ' + (this.team(F.owner)?.name || 'the team') + '’s quarters: it lives in that team’s folder and serves only them. Drag it outside to share it with other teams (slower to wire).' : F.type === 'rec' ? 'It watches; agents don’t walk to it.' : 'Agents with a path to this unit will have access to it.';
     } else {
       const s = m.sups[sel.id];
       if (!s) return null;
@@ -2010,27 +2110,33 @@ export class Sim {
       r = s.size * 0.9;
       p.title = s.name;
       const rows = reportRows(s.id);
+      const full = this.managerFull(s.id);
       p.hasRows = true;
-      p.rowsLabel = 'TEAMS UNDER MANAGEMENT';
+      p.rowsLabel = 'MANAGES';
       p.rows = rows;
       p.rowCount = s.id === 'pip' ? String(rows.length) : rows.length + '/' + MAX_TEAMS_PER_MANAGER;
       p.noRows = !rows.length;
-      p.noRowsText = 'No reports yet. Drop a team or manager on ' + s.name + '.';
+      p.noRowsText = B ? 'Nothing yet. Add a team above, or drop one on ' + s.name + '.' : 'Nothing yet.';
       if (s.id === 'pip') {
-        p.sub = 'CHIEF OF STUFF · ' + plural(m.teams.filter((T) => T.state === 'active').length, 'team') + ' running';
+        p.sub = plural(m.teams.filter((T) => T.state === 'active').length, 'team') + ' running';
+        p.hasEdit = false;
+        p.role = 'CHIEF OF STUFF';
         const vNeeds = this.visibleNeeds();
         p.hasNeeds = true;
         p.needCount = vNeeds.length;
         p.noNeeds = vNeeds.length === 0;
         p.needs = this.needCards();
-        p.acts = [btn('+ MANAGER', () => this.addManager('pip'), 'primary'), btn('+ TEAM', () => this.addTeam('pip'))];
+        if (B) p.pin = [btn('+ TEAM', () => this.addTeam('pip'), 'primary'), btn('+ SUPERVISOR', () => this.addManager('pip'))];
         p.hint = 'Everything your teams can’t decide alone lands here.';
       } else {
-        p.sub = s.role + ' · manager';
-        p.hasEdit = true;
-        p.hasRole = true;
+        p.role = s.role;
+        p.rowsFirst = true;
+        p.sub = 'under ' + (m.sups[s.boss || 'pip']?.name || 'VIC');
+        p.hasEdit = B;
         p.nameVal = s.name;
         p.roleVal = s.role;
+        p.hasRole = true;
+        p.nameMax = 14;
         p.onName = (v: string) => {
           s.name = (v || '').toUpperCase();
           this.dirty = true;
@@ -2041,19 +2147,28 @@ export class Sim {
           this.dirty = true;
           this.notify();
         };
-        p.hasBoss = true;
+        p.hasBoss = B;
+        p.bossLabel = 'MANAGED BY';
         p.bossChips = chips(
           s.boss,
           Object.values(m.sups).filter((o) => o.id !== s.id && !this.isUnder(o.id, s.id)),
           (id) => this.reparent('sup', s.id, id),
         );
-        p.acts = [btn('+ SUB-MANAGER', () => this.addManager(s.id), 'primary'), btn('+ TEAM', () => this.addTeam(s.id)), btn('RETIRE', () => this.deleteManager(s.id), 'danger')];
-        p.hint = 'Drag onto another manager to move this whole branch.';
+        if (B) p.pin = [btn(full ? 'FULL ' + MAX_TEAMS_PER_MANAGER + '/' + MAX_TEAMS_PER_MANAGER : '+ TEAM', () => this.addTeam(s.id), 'primary', full), btn('+ SUPERVISOR', () => this.addManager(s.id), undefined, full)];
+        p.acts = B ? [btn('RETIRE', () => this.deleteManager(s.id), 'danger')] : [];
+        p.hint = B ? 'Drag onto another manager to move this whole branch.' : '';
+        // What needs attention under this manager.
+        const mine = this.needCards(s.id);
+        p.hasNeeds = true;
+        p.needCount = mine.length;
+        p.noNeeds = mine.length === 0;
+        p.needs = mine;
       }
     }
     p.moodActs = p.moodActs || [];
     p.hasEquip = p.equip.length > 0;
     p.hasActs = p.acts.length > 0;
+    p.hasPin = !!p.pin && p.pin.length > 0;
     p.hasHint = !!p.hint;
     const sx = P.x + wx * z,
       sy = P.y + wy * z,
@@ -2111,13 +2226,27 @@ export class Sim {
     });
     this.apos = {};
     const eqMap: Record<string, Furniture[]> = {};
+    // Wires: one orthogonal path per (shared item, team), kept out of every other team's box.
+    const wires: { id: string; pts: string; dot: [number, number]; on: boolean }[] = [];
+    const boxes = m.teams
+      .filter((T) => T.state !== 'hidden')
+      .map((T) => {
+        const n = this.members(T).length;
+        return { id: T.id, x0: T.x - roomW(n) / 2 - 8, x1: T.x + roomW(n) / 2 + 8, y0: T.y - roomH(n) / 2 - 8, y1: T.y + roomH(n) / 2 + 8 };
+      });
     m.furn.forEach((F) =>
       this.inRange(F).forEach((T) => {
         (eqMap[T.id] = eqMap[T.id] || []).push(F);
-        line([F.x, F.y], [T.x, T.y], 0.28, 1.5, 'dotted');
+        if (F.owner) return;
+        const side: -1 | 1 = F.x < T.x ? -1 : 1;
+        const plug = this.plugPoint(T, side);
+        const pts = routeWire([F.x, F.y], plug, side, boxes.filter((b) => b.id !== T.id));
+        wires.push({ id: F.id + '>' + T.id, pts: pts.map((q) => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' '), dot: plug, on: this.wiring === F.id });
       }),
     );
     this.eqMap = eqMap;
+    const wiringF = this.wiring ? this.furnById(this.wiring) : null;
+    if (this.wiring && !wiringF) this.wiring = null;
 
     m.furn.forEach((F) => {
       const D = FT[F.type],
@@ -2134,6 +2263,9 @@ export class Sim {
       const hammer = !this.reducedMotion && walkIn >= 1 ? Math.abs(Math.sin(t * 14)) : 0;
       furn.push({
         building: !!F.build,
+        plus: this.builder && !F.owner && !F.build,
+        wiringThis: this.wiring === F.id,
+        startWire: () => this.startWiring(F.id),
         prog: bl,
         owned,
         wx: lerp(-64, 30, inOutSine(walkIn)),
@@ -2292,8 +2424,9 @@ export class Sim {
             eH = 3.6;
             eT = 5.2;
           }
-          const hue = this.reducedMotion ? 145 : (ce * 420) % 360;
-          bodyBg = 'hsl(' + hue.toFixed(0) + ' ' + (fade * 80).toFixed(0) + '% ' + (55 - fade * 7).toFixed(0) + '%)';
+          // A warm colour pop, easing back to ink. (No rainbow.)
+          const pop = this.reducedMotion ? 1 : 0.85 + 0.15 * Math.sin(ce * 9);
+          bodyBg = 'hsl(' + (38 - (1 - pop) * 10).toFixed(0) + ' ' + (fade * 92).toFixed(0) + '% ' + (62 - (1 - fade) * 54).toFixed(0) + '%)';
         }
         // U15/T6: prefers-reduced-motion stops the bob, the pulse and the aura.
         if (this.reducedMotion) bob = 0;
@@ -2343,6 +2476,8 @@ export class Sim {
           b2L: e2 - 0.8,
           browT: eT - 2.2,
           bodyBg,
+          celeb,
+          handsUp: celeb ? (this.reducedMotion ? 0 : Math.sin(ce * 9)) : 0,
           hasAck,
           ackSc: ackPop,
           ackOp: hasAck ? cl((ACK_SECS - ackE) / 0.3, 0, 1) : 0,
@@ -2422,6 +2557,18 @@ export class Sim {
         }),
         desks: dk.map((d) => ({ l: w / 2 + d[0] - 10, t: h / 2 + d[1] + 8, c: pend ? 'rgba(21,20,15,.2)' : 'rgba(21,20,15,.5)' })),
         agents,
+        plugs: ([-1, 1] as const).map((sd) => {
+          const wired = !!wiringF && (wiringF.wires || []).includes(T.id);
+          return {
+            side: sd,
+            left: sd < 0 ? -9 : w - 9,
+            top: h / 2 - 13,
+            armed: !!wiringF && !pend,
+            wired,
+            used: m.furn.some((F) => !F.owner && !F.build && (F.wires || []).includes(T.id) && (F.x < T.x ? -1 : 1) === sd),
+            go: () => this.plugClick(T.id),
+          };
+        }),
         // U15/T6: keyboard access for the floor itself.
         ariaLabel: T.name + ', ' + (pend ? 'pending' : anyStuck ? 'has a stuck agent' : n === 0 ? 'empty' : plural(n, 'agent')),
         activate: () => this.select({ kind: 'team', id: T.id }),
@@ -2551,6 +2698,7 @@ export class Sim {
         path: c.path || '',
         who: c.who ? c.who + (c.kind === 'DONE' ? ' ✓ ' : '') : '',
         text: c.text,
+        sig: signature(c),
         ago: ago(nowMs - c.ts),
         op: outCubic(pr),
         tx: (1 - outCubic(pr)) * 40,
@@ -2576,6 +2724,11 @@ export class Sim {
       gridSize: 30 * z,
       bgCursor: dr && dr.moved ? 'grabbing' : 'default',
       lines,
+      builder: this.builder,
+      toggleBuilder: () => this.toggleBuilder(),
+      wires,
+      wiringName: wiringF ? FT[wiringF.type].name : null,
+      cancelWiring: () => this.cancelWiring(),
       rooms,
       ghosts,
       sups,

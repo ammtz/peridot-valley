@@ -10,6 +10,7 @@ import { Intro } from './ui/Intro';
 import { Tour } from './ui/Tour';
 import { NeedsPill } from './ui/NeedsPill';
 import { ControlBar } from './ui/ControlBar';
+import { TOUR_STEPS } from './model/tour';
 
 export default function App() {
   const sim = useSim();
@@ -22,7 +23,7 @@ export default function App() {
   // tips instead of a third and fourth tour stop.
   const full = !sim.introOn && !sim.tourOn;
   const showFeed = full || sim.tourOn;
-  const showDock = full;
+  const showDock = full || (sim.tourOn && !!TOUR_STEPS[sim.tourStep]?.showDock);
   const showZoom = full;
   const showTitle = full || sim.tourOn;
   const phone = window.innerWidth < 560;
@@ -44,6 +45,12 @@ export default function App() {
       {rv.hasReTag && (
         <div style={{ position: 'fixed', left: rv.reTag.x, top: rv.reTag.y, zIndex: 2000, pointerEvents: 'none', whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, fontWeight: 800, letterSpacing: '.06em', background: '#15140f', color: '#f4f3ee', padding: '5px 9px', borderRadius: 7, boxShadow: '0 6px 10px rgba(21,20,15,.2)' }}>
           {rv.reTag.text}
+        </div>
+      )}
+      {rv.wiringName && (
+        <div role="status" style={{ position: 'fixed', left: '50%', top: 16, transform: 'translateX(-50%)', zIndex: 700, display: 'flex', alignItems: 'center', gap: 10, background: '#15140f', color: '#f4f3ee', padding: '6px 8px 6px 14px', borderRadius: 12, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 700, maxWidth: 'calc(100vw - 32px)' }}>
+          <span>Click a team's plug to wire {rv.wiringName}. Click a lit one again to unplug.</span>
+          <button onClick={rv.cancelWiring} style={{ minHeight: 44, minWidth: 64, borderRadius: 8, border: '2px solid #f4f3ee', background: 'transparent', color: '#f4f3ee', fontWeight: 800, fontSize: 12, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace" }}>DONE</button>
         </div>
       )}
       {showFeed && <Feed rv={rv} />}

@@ -7,7 +7,7 @@ import { Sim } from '../src/model/sim';
 import { seed } from '../src/model/seed';
 import { KEY, NOW } from '../src/model/constants';
 import { decide } from '../src/model/decider';
-import { STUCK_BY_AGENT, STUCK_BY_TEAM, STUCK_GENERIC, TASK_POOLS } from '../src/model/scenarios';
+import { nextTeamName, STUCK_BY_AGENT, STUCK_BY_TEAM, STUCK_GENERIC, TASK_POOLS } from '../src/model/scenarios';
 import { MAX_TEAMS_PER_MANAGER } from '../src/model/constants';
 import { PLANS, Q2_OPTIONS, pickPreset } from '../src/model/presets';
 
@@ -28,6 +28,7 @@ const make = () => {
   s.m.onboarded = true;
   s.introOn = false;
   s.introPhase = null;
+  s.builder = true;
   return s;
 };
 // Pointer events carry only what the handlers read.
@@ -205,7 +206,7 @@ test('step skips agents on inactive teams and the agent being dragged', () => {
   assert.ok(sort.doing || sort.done.includes('queued'));
 });
 
-test('furniture serves teams in range and announces a change once', () => {
+test('furniture serves wired teams and announces a change once', () => {
   const s = make();
   const db = s.furnById('fx-db')!;
   assert.deepEqual(s.inRange(db).map((T) => T.id), ['job', 'inbox']);
@@ -213,12 +214,10 @@ test('furniture serves teams in range and announces a change once', () => {
   const top = s.m.feed[0].id;
   s.announceFurn(db);
   assert.equal(s.m.feed[0].id, top);
-  db.x = s.team('home')!.x + 400;
-  db.y = s.team('home')!.y + 400;
-  s.announceFurn(db); // nobody in range: no card
+  db.wires = [];
+  s.announceFurn(db); // nobody wired: no card
   assert.equal(s.m.feed[0].id, top);
-  db.x = s.team('home')!.x;
-  db.y = s.team('home')!.y;
+  db.wires = ['home'];
   s.announceFurn(db);
   assert.equal(s.m.feed[0].text, 'Now serving HOME.');
 });
@@ -373,6 +372,62 @@ test('unblocking starts a celebration that ends on its own', () => {
   s.celebrating[a.id] = NOW() - 4;
   assert.equal(body(s), '#15140f');
   assert.equal(s.celebrating[a.id], undefined);
+  delete (globalThis as unknown as { window?: unknown }).window;
+});
+
+test('wires, not distance, give a shared item its teams; unplugging removes access', () => {
+  const s = make();
+  const db = s.m.furn.find((f) => f.id === 'fx-db')!;
+  assert.deepEqual(s.inRange(db).map((t) => t.id).sort(), ['inbox', 'job']);
+  s.placeFurn('db', s.team('home')!.x + 40, s.team('home')!.y + 400);
+  const f = s.m.furn[s.m.furn.length - 1];
+  f.build = null;
+  assert.deepEqual(s.inRange(f), [], 'close or not, no wire means no access');
+  s.wiring = f.id;
+  s.plugClick('home');
+  assert.deepEqual(s.inRange(f).map((t) => t.id), ['home']);
+  s.plugClick('home');
+  assert.deepEqual(s.inRange(f), [], 'clicking a wired plug again unplugs it');
+  s.wiring = null;
+  s.unplug(db.id, 'job');
+  assert.deepEqual(s.inRange(db).map((t) => t.id), ['inbox']);
+});
+
+test('view mode: nothing edits, dragging a team pans instead; builder mode drags', () => {
+  const s = make();
+  s.builder = false;
+  const T = s.team('job')!;
+  const x0 = T.x;
+  const pan0 = { ...s.pan };
+  s.nodeDown(ev(100, 100), 'team', T.id);
+  s.onMove({ clientX: 160, clientY: 130, pointerId: 1, movementX: 0 } as never);
+  s.onUp({ clientX: 160, clientY: 130, pointerId: 1 } as never);
+  assert.equal(T.x, x0);
+  assert.notDeepEqual(s.pan, pan0, 'the valley panned');
+  s.startWiring('fx-db');
+  assert.equal(s.wiring, null, 'wiring is builder-only');
+  s.placeFurnFromSheet('db');
+  assert.equal(s.m.furn.length, 2, 'placing from the sheet is builder-only');
+});
+
+test('team names go alpha, beta, gamma, skipping used ones, then II', () => {
+  const used = ['TEAM ALPHA', 'TEAM GAMMA'];
+  assert.equal(nextTeamName(used), 'TEAM BETA');
+  const all = new Set<string>();
+  for (let i = 0; i < 30; i++) {
+    const n = nextTeamName(all);
+    assert.ok(!all.has(n));
+    all.add(n);
+  }
+  assert.ok(all.has('TEAM ALPHA II'));
+});
+
+test('cards carry a signature of the team and agent that produced them', () => {
+  const s = make();
+  (globalThis as unknown as { window: unknown }).window = { innerWidth: 1400, innerHeight: 900 };
+  s.card('DONE', 'OTTO › TEAM BETA', 'SCOUT', 'x');
+  const rv = s.renderVals();
+  assert.equal(rv.doneCards[0].sig, '— TEAM BETA · SCOUT');
   delete (globalThis as unknown as { window?: unknown }).window;
 });
 
