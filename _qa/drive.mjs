@@ -221,13 +221,13 @@ if (!MOBILE) {
   const fps = await js('new Promise(r=>{let n=0;const t0=performance.now();(function f(){n++;performance.now()-t0<2000?requestAnimationFrame(f):r(Math.round(n/2))})()})');
   console.log('fps', fps);
 
-  // T4: renderTicks (one per notify()) over an idle 5s should be well under 300 --
-  // requestAnimationFrame still runs every frame (fps above is unaffected), but a
-  // full-tree re-render no longer follows every one of them.
+  // v3 lag fix: ambient animation (bob, blink, aura) is a function of the clock, so an idle
+  // valley must redraw on every frame (about 60/s, 300 in 5 s). The old T4 check wanted fewer
+  // than 300 and that is exactly what made idle motion drop to 4 Hz. Now it must keep up.
   const ticksBefore = await js('window.__sim.renderTicks');
   await sleep(5000);
   const ticksAfter = await js('window.__sim.renderTicks');
-  console.log('T4 render ticks over idle 5s well under 300:', ticksAfter - ticksBefore < 300, ticksAfter - ticksBefore);
+  console.log('v3 idle valley redraws every frame (>= 240 ticks in 5s):', ticksAfter - ticksBefore >= 240, ticksAfter - ticksBefore);
 
   // --- Regression: "skip" still loads the full valley, and runs the scripted story. ---
   await js("localStorage.removeItem('the-system-live-v4'); location.reload()"); await sleep(2500);
