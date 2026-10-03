@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Sim } from './model/sim';
-import { devServerSource, startLiveFeed } from './live/feed';
+import { pickSource, startLiveFeed } from './live/feed';
 
 let singleton: Sim | null = null;
 
@@ -21,8 +21,9 @@ export function useSim(): Sim {
   useEffect(() => {
     sim.notify = () => setTick((n) => n + 1);
     sim.start();
-    // M8: real events, when a source exists (dev server today, M2's ledger later). Off on the deployed site.
-    const stopLive = startLiveFeed(devServerSource, (events, initial) => sim.applyLive(events, initial));
+    // M8: real events, when a source exists. VITE_MERO_URL picks MERO's ledger (`mero serve`);
+    // without it, the dev server's laptop-jobs log. Off on the deployed site, which sets neither.
+    const stopLive = startLiveFeed(pickSource(import.meta.env.VITE_MERO_URL), (events, initial, moods) => sim.applyLive(events, initial, moods));
     return () => {
       stopLive();
       sim.notify = () => {};

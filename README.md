@@ -86,6 +86,11 @@ A static site, and deliberately small: Vite, React and TypeScript, with no UI
 framework and no backend. The whole world runs on one animation loop.
 
 - `src/model/` has the simulation, the starting world and the org rules.
+- `src/live/` reads real events. In `npm run dev` it reads the laptop jobs' log;
+  with `VITE_MERO_URL=http://127.0.0.1:8765` (and `python -m mero serve` running
+  in MERO) it reads MERO's ledger instead, and VIC, JEV, L2 and the workers show
+  up as a MERO team with MERO's moods. The deployed site sets neither and stays
+  simulated.
 - `src/world/` draws the town. `src/ui/` holds the popups, the feed and the dock.
 - `docs/handoff/` has the original design spec and the prototype it was built
   from.

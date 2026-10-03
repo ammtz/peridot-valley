@@ -6,7 +6,14 @@ const MAX_HELPERS = 6;
 const HELPER_NAMES = ['ACE', 'BEA', 'CAL', 'DOT', 'ELI', 'FAY', 'GUS', 'HAL', 'IRIS', 'JAX', 'KAI', 'LOU', 'MAE', 'NED', 'OLA', 'PIX', 'QUIN', 'ROO'];
 import { genericAgents, genericTeamPool, helperCount, pickPreset, Q2_OPTIONS, type PresetManagerSeed } from './presets';
 import { decide, type DecideState } from './decider';
-import { jobName, tally, tickerText, toAction, type LiveAction, type MeroEvent } from '../live/events';
+import { jobName, tally, tickerText, type MeroEvent } from '../live/events';
+import { actorOf, addCost, askText, creatureName, creatureRole, holderOf, jobsPart, meroAction, meroTickerText, NO_COST, roleOf, type Holder, type MeroAction, type MeroCost } from '../live/mero';
+
+/** M8: the teams real creatures live on. */
+const LIVE_TEAMS = {
+  jobs: { id: 'live-jobs', name: 'LAPTOP JOBS', joined: 'LAPTOP JOBS joined. These helpers are real: each one is a scheduled job on this laptop.' },
+  mero: { id: 'live-mero', name: 'MERO', joined: "MERO joined. These helpers are real: each one is an agent in MERO's ledger (VIC, JEV, L2, the workers)." },
+} as const;
 
 type DragKind = 'pan' | 'team' | 'sup' | 'furn' | 'agent' | 'newfurn' | 'ghost';
 
@@ -94,6 +101,16 @@ export class Sim {
   /** M8: real events seen so far (capped), and the title-bar line built from them. Null until a live source connects. */
   liveEvents: MeroEvent[] = [];
   liveTicker: string | null = null;
+  /** MERO's moods by ledger actor, from /views. Not saved: they belong to the source, refreshed every poll. */
+  liveMoods: Record<string, Mood> = {};
+  /** Sum of every real model.call seen (cost_usd, tokens, calls). */
+  liveCost: MeroCost = NO_COST;
+  /** True once any event came from `mero serve` (it carries an actor). */
+  liveMero = false;
+  private liveActors = new Set<string>();
+  private liveOpenAsks = new Set<number>();
+  /** approval.ask seq -> the creature that asked. */
+  private liveAskBy = new Map<number, string>();
   pan = { x: 0, y: 0 };
   zoom = 1;
   sel: Sel | null = null;
@@ -1181,76 +1198,161 @@ export class Sim {
   }
 
   // ---------------------------------------------------------------- M8: real events
-  /** The team that holds one creature per real laptop job. Made the first time a job is seen. */
-  private liveTeam(): Team {
-    const found = this.m.teams.find((T) => T.live);
+  /** One team per real source of creatures, made the first time one of its creatures is seen. */
+  private liveTeam(which: 'jobs' | 'mero'): Team {
+    const spec = LIVE_TEAMS[which];
+    const found = this.team(spec.id);
     if (found) return found;
     const b = this.m.sups.pip || Object.values(this.m.sups)[0];
     // Beside the org, never on top of it: just right of everything already placed, at the first team row.
     const x = Math.max(b.x + 300, this.orgBounds().x1 + 190);
-    const T: Team = { id: 'live-jobs', name: 'LAPTOP JOBS', boss: b.id, x, y: b.y + 210, state: 'active', pool: [], pi: 0, born: NOW(), live: true };
+    const T: Team = { id: spec.id, name: spec.name, boss: b.id, x, y: b.y + 210, state: 'active', pool: [], pi: 0, born: NOW(), live: true };
     this.m.teams.push(T);
-    this.card('ORG', this.pathName(T.id), '', 'LAPTOP JOBS joined. These helpers are real: each one is a scheduled job on this laptop.');
+    this.card('ORG', this.pathName(T.id), '', spec.joined);
     return T;
   }
-  private liveAgent(T: Team, job: string): Agent {
-    const id = 'live-' + job;
-    let a = this.m.agents.find((x) => x.id === id);
+  private liveId(h: Holder): string {
+    return (h.team === 'mero' ? 'mero-' : 'live-') + h.key;
+  }
+  /** The creature for a laptop job or a MERO agent. Its `actor` is how /views moods find it. */
+  private liveAgent(h: Holder & { team: 'jobs' | 'mero' }): Agent {
+    const id = this.liveId(h);
+    let a = this.agent(id);
     if (!a) {
-      a = { id, name: jobName(job), role: 'laptop job', team: T.id, doing: null, backlog: [], done: [], blocked: null, fear: null };
+      const T = this.liveTeam(h.team);
+      a =
+        h.team === 'jobs'
+          ? { id, name: jobName(h.key), role: 'laptop job', team: T.id, doing: null, backlog: [], done: [], blocked: null, fear: null }
+          : { id, name: creatureName(h.key), role: creatureRole(h.key), team: T.id, doing: null, backlog: [], done: [], blocked: null, fear: null };
       this.m.agents.push(a);
     }
+    a.actor = actorOf(h) ?? undefined;
     return a;
   }
-  /** Apply one real event. `quiet` sets the state without posting cards (catching up on history). */
-  private applyLiveAction(a: Agent, act: LiveAction, quiet: boolean) {
+  /** A MERO agent's creature: driven by the ledger, read-only from the valley. */
+  isMeroCreature(a: Agent): boolean {
+    return !!a.actor && roleOf(a.actor) !== 'job';
+  }
+  /** Apply one real event. `quiet` sets the state without posting cards (catching up on history). `a` is null for you and sys. */
+  private applyLiveAction(a: Agent | null, act: MeroAction, quiet: boolean, who: string) {
+    if (act.kind === 'answer') {
+      const asker = act.ask === null ? undefined : this.liveAskBy.get(act.ask);
+      if (act.ask !== null) {
+        this.m.needs = this.m.needs.filter((n) => n.id !== 'ma' + act.ask);
+        this.liveAskBy.delete(act.ask);
+      }
+      const b = asker ? this.agent(asker) : undefined;
+      if (b) b.fear = null;
+      if (!quiet) this.card('YOU', b ? this.pathName(b.team) : this.liveMeroPath(), creatureName(who), ' ' + act.text.charAt(0).toLowerCase() + act.text.slice(1) + (b ? ` (${b.name})` : '') + '.');
+      return;
+    }
+    if (!a) {
+      if (!quiet && act.kind !== 'cost') this.card('LIVE', this.liveMeroPath(), creatureName(who), ': ' + act.text + '.');
+      return;
+    }
     const path = this.pathName(a.team);
+    const mero = this.isMeroCreature(a);
     if (act.kind === 'start') {
       a.doing = act.text;
       a.blocked = null;
       this.removeNeeds(a.id, 'blocked');
       if (!quiet) this.card('LIVE', path, a.name, ' started.');
-    } else if (act.kind === 'done') {
+    } else if (act.kind === 'doing') {
       a.doing = act.text;
+      if (!quiet) this.card('LIVE', path, a.name, ': ' + act.text + '.');
+    } else if (act.kind === 'done') {
+      if (mero) {
+        a.blocked = null;
+        this.removeNeeds(a.id, 'blocked');
+      }
+      a.doing = (mero && a.doing) || act.text;
       if (quiet) {
-        a.done = [act.text, ...a.done].slice(0, 8);
+        a.done = [a.doing, ...a.done].slice(0, 8);
         a.doing = null;
       } else this.complete(a, NOW());
+    } else if (act.kind === 'clear') {
+      a.blocked = null;
+      this.removeNeeds(a.id, 'blocked');
+      if (!quiet) this.card('LIVE', path, a.name, ': ' + act.text + '.');
     } else if (act.kind === 'stuck') {
       a.doing = null;
       a.blocked = { text: act.text, fix: 'SEEN IT' };
       this.removeNeeds(a.id, 'blocked');
-      this.pushNeed({ id: 'nl' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'blocked', text: a.name + ': ' + act.text + '.', acts: [['SEEN IT', 'unblock'], ['LATER', 'skip']] });
+      // A job's SEEN IT clears it here (its next run would anyway). A MERO agent's is only noted:
+      // MERO says when it's unstuck (a passing check), and its mood comes from MERO.
+      const acts: [string, string][] = mero ? [['SEEN IT', 'ack'], ['LATER', 'skip']] : [['SEEN IT', 'unblock'], ['LATER', 'skip']];
+      this.pushNeed({ id: 'nl' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'blocked', text: a.name + ': ' + act.text + '.', acts, ok: mero ? 'Noted. ' + a.name + ' stays stuck until a check passes in MERO.' : undefined });
       if (!quiet) {
         this.card('STUCK', path, a.name, ' ' + act.text + '.');
         this.evLog.push({ t: NOW(), team: a.team, kind: 'stuck', who: a.name, text: act.text });
       }
+    } else if (act.kind === 'ask') {
+      // PIP asks you about it. The valley only reads the ledger, so the answer is given in MERO.
+      a.fear = act.text;
+      if (act.seq !== null) {
+        this.liveAskBy.set(act.seq, a.id);
+        if (this.liveOpenAsks.has(act.seq))
+          this.pushNeed({ id: 'ma' + act.seq, agent: a.id, team: a.team, kind: 'fear', text: askText(a.name, act.text, act.seq), acts: [['GOT IT', 'ack'], ['LATER', 'skip']], ok: `Noted. Answer it in MERO: mero approve ${act.seq} (or --no).` });
+      }
+      if (!quiet) {
+        this.card('ASKS', path, a.name, ' asks: ' + act.text + '.');
+        this.evLog.push({ t: NOW(), team: a.team, kind: 'fear', who: a.name, text: act.text });
+      }
+    } else if (act.kind === 'cost') {
+      // The ticker counts it; a card per model call would bury everything else.
     } else if (!quiet) {
       this.card('LIVE', path, a.name, ': ' + act.text + '.');
     }
   }
+  private liveMeroPath(): string {
+    return this.team(LIVE_TEAMS.mero.id) ? this.pathName(LIVE_TEAMS.mero.id) : 'MERO';
+  }
+  private applyLiveEvent(e: MeroEvent, quiet: boolean) {
+    const h = holderOf(e);
+    this.applyLiveAction(h.team === null ? null : this.liveAgent(h as Holder & { team: 'jobs' | 'mero' }), meroAction(e), quiet, h.key);
+  }
   /**
    * Take a batch of real events from src/live/feed.ts. The first batch is the history
-   * so far: it sets each job's state quietly and posts one card, instead of replaying
-   * a day of runs. Before onboarding there is no org to hang the team on, so events
-   * only update the ticker; the creatures appear on the next batch after it.
+   * so far: it sets each creature's state quietly and posts one card per team, instead
+   * of replaying a day of runs. Before onboarding there is no org to hang the teams on,
+   * so events only update the ticker; the creatures appear on the next batch after it.
+   * `moods` (MERO's /views, by actor) replaces the last ones; nothing else sets them.
    */
-  applyLive(events: MeroEvent[], initial: boolean) {
+  applyLive(events: MeroEvent[], initial: boolean, moods?: Record<string, Mood>) {
     const ready = this.m.onboarded && !this.introOn;
-    // An empty poll matters only when onboarding just finished and some job has no creature yet.
-    if (!events.length && !initial && !(ready && this.liveEvents.some((e) => !this.m.agents.some((a) => a.id === 'live-' + e.job)))) return;
+    if (moods) this.liveMoods = moods;
+    const missing = () => this.liveEvents.some((e) => holderOf(e).team !== null && !this.agent(this.liveId(holderOf(e))));
+    // An empty poll matters only for new moods, or when onboarding just finished and some creature is missing.
+    if (!events.length && !initial && !moods && !(ready && missing())) return;
     this.liveEvents = this.liveEvents.concat(events).slice(-2000);
-    const t = tally(this.liveEvents);
-    this.liveTicker = tickerText(t);
-    if (ready && t.jobs.length) {
-      const T = this.liveTeam();
-      const fresh = t.jobs.filter((j) => !this.m.agents.some((a) => a.id === 'live-' + j));
-      t.jobs.forEach((j) => this.liveAgent(T, j));
-      // New creatures catch up on the whole history; known ones only on what's new.
-      const replay = initial ? this.liveEvents : this.liveEvents.filter((e) => fresh.includes(e.job) && !events.includes(e));
-      replay.forEach((e) => this.applyLiveAction(this.liveAgent(T, e.job), toAction(e), true));
-      if (!initial) events.forEach((e) => this.applyLiveAction(this.liveAgent(T, e.job), toAction(e), false));
-      if (initial) this.card('LIVE', this.pathName(T.id), '', 'Connected to the laptop jobs: ' + t.jobs.join(', ') + '.');
+    // Running totals, so the cap on liveEvents never drops spend or asks.
+    this.liveCost = addCost(this.liveCost, events);
+    for (const e of events) {
+      const h = holderOf(e);
+      if (typeof e.actor === 'string') this.liveMero = true;
+      if (h.team === 'mero') this.liveActors.add(h.key);
+      if (e.event === 'approval.ask' && typeof e.seq === 'number') this.liveOpenAsks.add(e.seq);
+      if (e.event === 'approval.give' && typeof e.ask === 'number') this.liveOpenAsks.delete(e.ask);
+    }
+    const t = tally(this.liveEvents.filter((e) => holderOf(e).team === 'jobs'));
+    this.liveTicker = this.liveMero ? meroTickerText({ agents: this.liveActors.size, cost: this.liveCost, openAsks: this.liveOpenAsks.size, jobs: jobsPart(t) }) : tickerText(t);
+    if (ready) {
+      const fresh = this.liveEvents.filter((e) => holderOf(e).team !== null && !this.agent(this.liveId(holderOf(e))));
+      const freshIds = new Set(fresh.map((e) => this.liveId(holderOf(e))));
+      // New creatures catch up on the whole history (and on your answers to their asks); known ones only on what's new.
+      const replay = initial
+        ? this.liveEvents
+        : freshIds.size
+          ? this.liveEvents.filter((e) => !events.includes(e) && (holderOf(e).team === null ? e.event === 'approval.give' : freshIds.has(this.liveId(holderOf(e)))))
+          : [];
+      replay.forEach((e) => this.applyLiveEvent(e, true));
+      if (!initial) events.forEach((e) => this.applyLiveEvent(e, false));
+      if (initial) {
+        const jobs = this.team(LIVE_TEAMS.jobs.id);
+        if (jobs && t.jobs.length) this.card('LIVE', this.pathName(jobs.id), '', 'Connected to the laptop jobs: ' + t.jobs.join(', ') + '.');
+        const mero = this.team(LIVE_TEAMS.mero.id);
+        if (mero) this.card('LIVE', this.pathName(mero.id), '', 'Connected to MERO: ' + this.members(mero).map((a) => a.name).join(', ') + '.');
+      }
     }
     this.dirty = true;
     this.notify();
@@ -1473,6 +1575,13 @@ export class Sim {
     this.card('YOU', this.pathName(a.team), a.name, ' picked up 2 new tasks.');
   }
   mood(a: Agent, t: number): Mood {
+    // M8: a real creature's mood is MERO's (/views), never the simulation's guess. A MERO agent
+    // that /views hasn't named yet reads as plain working; a laptop job falls back to its own state.
+    if (a.actor) {
+      const real = this.liveMoods[a.actor];
+      if (real) return real;
+      if (this.isMeroCreature(a)) return 'working';
+    }
     const state: DecideState = {
       blocked: !!a.blocked,
       waitingOnApproval: !!a.fear,
@@ -1491,9 +1600,9 @@ export class Sim {
       case 'bored':
         return { text: 'Nothing in my queue. Got anything for me?', why: 'empty backlog' };
       case 'frustrated':
-        return { text: 'Can’t finish this. ' + cap(a.blocked!.text) + '.', why: 'needs you' };
+        return { text: 'Can’t finish this. ' + cap(a.blocked ? a.blocked.text : 'my last check failed') + '.', why: 'needs you' };
       case 'stalled':
-        return { text: 'Not sure about ' + a.fear + '. Waiting on your OK.', why: 'waiting for your OK' };
+        return { text: 'Not sure about ' + (a.fear || 'something') + '. Waiting on your OK.', why: 'waiting for your OK' };
       case 'pending':
         return { text: 'Ready to start once you sign.', why: 'team not live' };
       default:
@@ -1601,9 +1710,13 @@ export class Sim {
         fn();
         this.notify();
       };
-      p.moodActs =
-        md === 'frustrated'
-          ? [btn(a.blocked!.fix, wrap(() => this.unblock(a)), 'primary')]
+      // M8: a MERO agent is read-only here; its asks are answered in MERO (mero approve).
+      p.moodActs = this.isMeroCreature(a)
+        ? []
+        : md === 'frustrated'
+          ? a.blocked
+            ? [btn(a.blocked.fix, wrap(() => this.unblock(a)), 'primary')]
+            : []
           : md === 'stalled'
             ? [btn('GO AHEAD', wrap(() => this.approve(a)), 'primary'), btn('HOLD OFF', wrap(() => this.hold(a)))]
             : md === 'overwhelmed' && mates.length
@@ -1613,7 +1726,11 @@ export class Sim {
                 : [];
       p.hasMoodActs = p.moodActs.length > 0;
       p.secs = this.secs(t, a.doing ? [{ text: a.doing }] : [], a.backlog.map((x) => ({ text: x })), a.done.slice(0, 4).map((x) => ({ text: x })));
-      p.hint = pend ? 'Waiting on your signature. Open VIC to sign.' : 'Drag me onto another floor to reassign.';
+      p.hint = pend
+        ? 'Waiting on your signature. Open VIC to sign.'
+        : this.isMeroCreature(a)
+          ? 'Real MERO agent: it moves only on ledger events. Answer its asks with mero approve.'
+          : 'Drag me onto another floor to reassign.';
     } else if (sel.kind === 'team') {
       const T = this.team(sel.id);
       if (!T) return null;

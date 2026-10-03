@@ -43,6 +43,8 @@ export interface Agent {
   flowUntil?: number;
   recent?: number[];
   flowSeed?: boolean;
+  /** M8: the ledger actor a real creature stands for (`job:NAME`, `vic`, `l0:NAME`…), so MERO's moods can find it. */
+  actor?: string;
 }
 
 export interface Furniture {
