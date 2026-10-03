@@ -93,6 +93,7 @@ One animation loop runs the whole world.
 | Path | Holds |
 |---|---|
 | `src/model/` | Simulation, starting world, org rules |
+| `src/live/` | Real events: the laptop jobs' log in dev, or MERO's ledger with `VITE_MERO_URL`. The deployed site sets neither and stays simulated |
 | `src/world/` | Town rendering |
 | `src/ui/` | Popups, feed, dock |
 | `docs/handoff/` | Original design spec and prototype |

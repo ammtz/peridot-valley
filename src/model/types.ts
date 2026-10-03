@@ -26,6 +26,8 @@ export interface Team {
   pi: number;
   born?: number | null;
   fireAt?: number | null;
+  /** M8: a team of real laptop jobs, driven by src/live, never by the simulation. */
+  live?: boolean;
 }
 
 export interface Agent {
@@ -41,6 +43,8 @@ export interface Agent {
   flowUntil?: number;
   recent?: number[];
   flowSeed?: boolean;
+  /** M8: the ledger actor a real creature stands for (`job:NAME`, `vic`, `l0:NAME`…), so MERO's moods can find it. */
+  actor?: string;
 }
 
 export interface Furniture {
