@@ -5,6 +5,8 @@ const isPhone = () => typeof window !== 'undefined' && window.innerWidth <= 600;
 const inlineIn: React.CSSProperties = { display: 'block', width: '100%', padding: '0 4px', margin: '0 0 0 -4px', background: 'transparent', border: 'none', borderBottom: '1.5px dashed rgba(21,20,15,.35)', outline: 'none', fontFamily: 'inherit', borderRadius: 0 };
 const btnBase: React.CSSProperties = { minHeight: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' };
 
+import { FacilityPanel } from './FacilityPanel';
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function Popup({ rv }: { rv: any }) {
   if (!rv.hasPop) return null;
@@ -72,6 +74,8 @@ export function Popup({ rv }: { rv: any }) {
           )}
         </div>
       )}
+
+      {pop.fac && <FacilityPanel fac={pop.fac} />}
 
       {pop.hasDesc && <div style={{ padding: '12px 16px 2px', fontSize: 15, lineHeight: 1.5 }}>{pop.desc}</div>}
 

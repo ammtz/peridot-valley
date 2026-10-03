@@ -38,7 +38,9 @@ export default function App() {
       {!phone && (showZoom || showDock || full) && <ControlBar rv={rv} showZoom={showZoom} showDock={showDock} showPill={full} />}
       {rv.hasGhost && (
         <div style={{ position: 'fixed', left: rv.ghost.x, top: rv.ghost.y, zIndex: 2000, pointerEvents: 'none', transform: `translate(-24px,-30px) scale(${rv.ghost.sc})`, fontFamily: "'JetBrains Mono',monospace" }}>
-          <FurnitureIcon kind={rv.ghost.kind} t={rv.ghost.t} />
+          <div style={{ borderRadius: 10, boxShadow: rv.ghost.bad ? '0 0 0 5px rgba(214,60,47,.75)' : rv.ghost.ok ? '0 0 0 5px rgba(58,168,101,.65)' : 'none', background: rv.ghost.bad ? 'rgba(214,60,47,.18)' : rv.ghost.ok ? 'rgba(58,168,101,.14)' : 'transparent' }}>
+            <FurnitureIcon kind={rv.ghost.kind} t={rv.ghost.t} />
+          </div>
           <div style={{ marginTop: 4, whiteSpace: 'nowrap', fontSize: 10, fontWeight: 800, letterSpacing: '.06em', background: '#15140f', color: '#f4f3ee', padding: '3px 7px', borderRadius: 6 }}>{rv.ghost.label}</div>
         </div>
       )}
@@ -51,6 +53,11 @@ export default function App() {
         <div role="status" style={{ position: 'fixed', left: '50%', top: 16, transform: 'translateX(-50%)', zIndex: 700, display: 'flex', alignItems: 'center', gap: 10, background: '#15140f', color: '#f4f3ee', padding: '6px 8px 6px 14px', borderRadius: 12, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 700, maxWidth: 'calc(100vw - 32px)' }}>
           <span>Click a team's plug to wire {rv.wiringName}. Click a lit one again to unplug.</span>
           <button onClick={rv.cancelWiring} style={{ minHeight: 44, minWidth: 64, borderRadius: 8, border: '2px solid #f4f3ee', background: 'transparent', color: '#f4f3ee', fontWeight: 800, fontSize: 12, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace" }}>DONE</button>
+        </div>
+      )}
+      {rv.toast && (
+        <div role="status" style={{ position: 'fixed', left: '50%', top: 64, transform: 'translateX(-50%)', zIndex: 800, background: '#15140f', color: '#f4f3ee', padding: '9px 16px', borderRadius: 12, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 700, maxWidth: 'calc(100vw - 32px)', boxShadow: '0 6px 10px rgba(21,20,15,.2)', pointerEvents: 'none' }}>
+          {rv.toast}
         </div>
       )}
       {showFeed && <Feed rv={rv} />}

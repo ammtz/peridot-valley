@@ -1,7 +1,10 @@
 import type { Agent, FeedCard, Furniture, Manager, Mood, Need, NodeKind, Sel, Settings, Team, WorldModel } from './types';
-import { CURRENT_V, MAX_TEAMS_PER_MANAGER, uid, DOCK_TIP, FR, FACILITY_RULES, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic, plural } from './constants';
+import { CURRENT_V, MAX_TEAMS_PER_MANAGER, uid, DOCK_TIP, DOCK_KINDS, FR, FACILITY_RULES, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic, plural } from './constants';
 import { TOUR_STEPS } from './tour';
 import { routeWire } from '../lib/route';
+import { insideAny, legalSpot, type Rect } from '../lib/place';
+import { EventStream, MeetingDriver, connectDrive, cycleMessage, detectSampleDrive, foldChamber, foldMeeting, pullDrive, whatFor, wouldCycle, type ChamberView, type MeetingView, type Purpose } from './facility';
+import { chamberRV, driveRV, meetingRV, facilityPanel, walkersFor, teamColor, cablePts } from './facilityView';
 import { blank, desks, roomH, roomW, seed } from './seed';
 
 const MAX_HELPERS = 6;
@@ -171,6 +174,19 @@ export class Sim {
   motion = false;
   /** FIX1: true once layoutPhoneColumn() has reflowed the org into a scrollable column. */
   phoneColumnLayout = false;
+  /** Round 3: the scripted event stream. Chamber and meeting state are folded from it, never set. */
+  stream = new EventStream();
+  meetingDriver = new MeetingDriver(this.stream);
+  /** A short message at the top of the screen. Not saved. */
+  toastText = '';
+  toastUntil = 0;
+  /** Chamber the dragged team banner is over. */
+  hoverChamber: string | null = null;
+  /** Transient panel lines keyed by facility id (the detect note, a refused agenda edit). Not saved. */
+  notes: Record<string, string> = {};
+  private foldCache = new Map<string, { v: number; view: ChamberView | MeetingView }>();
+  private sealCache: { key: string; map: Map<string, string> } = { key: '', map: new Map() };
+  private synced = new Set<string>();
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -566,7 +582,10 @@ export class Sim {
         S.recv = null;
       });
       s.furn = (s.furn || []).filter((f: Furniture) => (f.type as string) !== 'board');
+      // Round 3: drives and the sealed state live only in the event stream, which starts empty.
+      s.furn = s.furn.filter((f: Furniture) => f.type !== 'drive');
       s.furn.forEach((f: Furniture) => {
+        if (f.type === 'chamber') f.link = null;
         f.born = null;
         f.build = null;
         f.lastRecapT = null;
@@ -948,7 +967,8 @@ export class Sim {
       const T = this.team(D.id!)!;
       T.x = D.ox + dx / z;
       T.y = D.oy + dy / z;
-      this.hoverMgr = this.mgrAt(w.x, w.y, D);
+      this.hoverChamber = this.chamberAtPoint(w.x, w.y);
+      this.hoverMgr = this.hoverChamber ? null : this.mgrAt(w.x, w.y, D);
     } else if (D.kind === 'sup') {
       const s = this.m.sups[D.id!];
       s.x = D.ox + dx / z;
@@ -1007,7 +1027,9 @@ export class Sim {
         this.wiring = null;
       }
       else if (D.kind === 'ghost') this.select({ kind: 'sup', id: 'pip' });
-      else this.select({ kind: D.kind as NodeKind, id: D.id! });
+      else if (D.kind === 'furn' && this.wiring && this.furnById(D.id!)?.type === 'drive' && this.cableTo(D.id!)) {
+        /* the data cable: handled */
+      } else this.select({ kind: D.kind as NodeKind, id: D.id! });
     } else {
       if (D.kind === 'agent') {
         const a = this.agent(D.id!)!;
@@ -1023,6 +1045,11 @@ export class Sim {
           const T2 = this.team(a.team)!;
           this.disp[a.id] = { team: T2.id, x: this.dragPos.x - T2.x, y: this.dragPos.y - T2.y };
         }
+      } else if (D.kind === 'team' && this.hoverChamber) {
+        const T = this.team(D.id!)!;
+        T.x = D.ox;
+        T.y = D.oy;
+        this.moveIn(D.id!, this.hoverChamber);
       } else if ((D.kind === 'team' || D.kind === 'sup') && this.hoverMgr) {
         const target = this.hoverMgr;
         if (D.kind === 'team') {
@@ -1044,6 +1071,7 @@ export class Sim {
     }
     this.hover = null;
     this.hoverMgr = null;
+    this.hoverChamber = null;
     this.dragPos = null;
     this.notify();
   }
@@ -1060,7 +1088,7 @@ export class Sim {
 
   inRange(F: Furniture) {
     // Still being built: serves nobody yet.
-    if (F.build) return [];
+    if (F.build || F.type === 'chamber' || F.type === 'drive') return [];
     // Inside a team's quarters it lives in that team's folder and serves that team only.
     if (F.owner) {
       const own = this.team(F.owner);
@@ -1068,7 +1096,9 @@ export class Sim {
     }
     // Shared: access follows wires, never distance.
     const w = F.wires || [];
-    return this.m.teams.filter((T) => T.state !== 'hidden' && w.includes(T.id));
+    // A team sealed in a chamber is cut off: it reaches nothing outside.
+    const sealed = this.sealedMap();
+    return this.m.teams.filter((T) => T.state !== 'hidden' && w.includes(T.id) && !sealed.has(T.id));
   }
   /** World position and side of a team box's wall plug. Left plug when the item sits left of the team, else right. */
   plugPoint(T: Team, side: -1 | 1): [number, number] {
@@ -1086,7 +1116,7 @@ export class Sim {
   }
   startWiring(id: string) {
     const F = this.furnById(id);
-    if (!this.builder || !F || F.owner || F.build) return;
+    if (!this.builder || !F || F.owner || F.build || F.type === 'drive') return;
     this.wiring = this.wiring === id ? null : id;
     this.sel = null;
     this.notify();
@@ -1100,7 +1130,11 @@ export class Sim {
   plugClick(teamId: string) {
     const F = this.wiring ? this.furnById(this.wiring) : null;
     const T = this.team(teamId);
-    if (!F || !T) return;
+    if (!F || !T || F.type === 'chamber') return;
+    if (this.sealedMap().has(teamId) && !(F.wires || []).includes(teamId)) {
+      this.toast(T.name + ' is sealed in a chamber. Move it out first.');
+      return;
+    }
     F.wires = F.wires || [];
     if (F.wires.includes(teamId)) {
       this.unplug(F.id, teamId);
@@ -1108,6 +1142,7 @@ export class Sim {
       F.wires.push(teamId);
       this.card('EQUIP', FT[F.type].name, '', FT[F.type].name + ' is wired to ' + T.name + '. Agents there have a path to it now.');
     }
+    if (F.type === 'meeting') this.syncMeeting(F);
     // Stay in wiring mode so several teams can be connected in a row; Esc or a click elsewhere ends it.
     this.dirty = true;
     this.notify();
@@ -1117,6 +1152,7 @@ export class Sim {
     if (!F || !F.wires) return;
     F.wires = F.wires.filter((x) => x !== teamId);
     this.card('EQUIP', FT[F.type].name, '', FT[F.type].name + ' was unplugged from ' + (this.team(teamId)?.name || 'a team') + '.');
+    if (F.type === 'meeting') this.syncMeeting(F);
     this.dirty = true;
     this.notify();
   }
@@ -1141,9 +1177,14 @@ export class Sim {
     const rules = FACILITY_RULES[F.type] || {};
     const q = this.quartersAt(F.x, F.y);
     let owner: string | null = null;
-    if (q && rules.sharedOnly) {
-      F.y = q.y + roomH(this.members(q).length) / 2 + 52;
-      this.card('EQUIP', q.name, '', FT[F.type].name + ' is always shared, so it went outside the quarters.');
+    if (rules.sharedOnly) {
+      // Stands on its own: nudge it to the nearest legal spot outside every team's quarters.
+      const spot = legalSpot(F.x, F.y, this.quarterRects(), rules.pad ?? 0);
+      if (spot.moved) {
+        F.x = spot.x;
+        F.y = spot.y;
+        this.toast(rules.nudgeMsg || FT[F.type].name + ' is always shared, so it went outside the quarters.');
+      }
     } else if (q) {
       const taken = new Set(this.m.furn.filter((o) => o.id !== F.id && o.owner === q.id).map((o) => o.slot));
       let best = -1,
@@ -1174,7 +1215,8 @@ export class Sim {
     if (!owner) F.slot = null;
     if (owner) F.wires = [];
     else if (!F.wires) F.wires = [];
-    if (isNew || changed) this.startBuild(F);
+    if (F.type === 'drive') F.wires = [];
+    if (F.type !== 'drive' && (isNew || changed)) this.startBuild(F);
   }
   startBuild(F: Furniture) {
     const t = NOW();
@@ -1211,6 +1253,7 @@ export class Sim {
         }),
       );
       this.announceFurn(F);
+      if (F.type === 'meeting') this.syncMeeting(F);
       const names = served.map((T) => T.name).join(', ');
       this.card('EQUIP', FT[F.type].name, '', FT[F.type].name + ' is up and running' + (names ? ' for ' + names + '. Every agent there has read it.' : '.'));
       this.dirty = true;
@@ -1226,6 +1269,7 @@ export class Sim {
   placeFurn(type: Furniture['type'], x: number, y: number) {
     const F: Furniture = { id: uid('fx'), type, x, y, on: FT[type].opts.map((_, i) => i === 0), born: NOW() };
     this.m.furn.push(F);
+    this.sealCache.key = '';
     this.settleFurn(F, true);
     this.announceFurn(F);
     // U3: don't auto-select (and pop open its sheet) over the tour.
@@ -1388,11 +1432,255 @@ export class Sim {
     this.dirty = true;
     this.notify();
   }
+  // ------------------------------------------------------------ Round 3: chamber and meeting (a preview)
+  toast(text: string) {
+    this.toastText = text;
+    this.toastUntil = NOW() + 3.4;
+    this.notify();
+  }
+  /** Each team's quarters as a rectangle (with room for its banner), for placement rules. */
+  quarterRects(): Rect[] {
+    return this.m.teams
+      .filter((T) => T.state !== 'hidden')
+      .map((T) => {
+        const n = this.members(T).length;
+        return { x0: T.x - roomW(n) / 2, x1: T.x + roomW(n) / 2, y0: T.y - roomH(n) / 2 - 26, y1: T.y + roomH(n) / 2 + 8 };
+      });
+  }
+  /** Would a facility of this kind dropped here break its placement rule? (The ghost goes red.) */
+  illegalAt(type: Furniture['type'], x: number, y: number) {
+    const r = FACILITY_RULES[type];
+    return !!r && !!r.sharedOnly && insideAny(x, y, this.quarterRects(), r.pad ?? 0);
+  }
+  private folded<T extends ChamberView | MeetingView>(key: string, make: () => T): T {
+    const c = this.foldCache.get(key);
+    if (c && c.v === this.stream.version) return c.view as T;
+    const view = make();
+    this.foldCache.set(key, { v: this.stream.version, view });
+    return view;
+  }
+  /** The chamber's state, folded from events. The UI reads this and never writes it. */
+  chamberOf(id: string): ChamberView {
+    return this.folded('c:' + id, () => foldChamber(this.stream.events, id));
+  }
+  meetingOf(id: string): MeetingView {
+    return this.folded('m:' + id, () => foldMeeting(this.stream.events, id));
+  }
+  /** Team id -> the chamber it is sealed in. */
+  sealedMap(): Map<string, string> {
+    const key = this.stream.version * 1000 + this.m.furn.length + ':' + this.m.furn.reduce((n, F) => n + (F.type === 'chamber' && !F.build ? 1 : 0), 0);
+    if (this.sealCache.key === key) return this.sealCache.map;
+    const map = new Map<string, string>();
+    this.m.furn.forEach((F) => {
+      if (F.type !== 'chamber' || F.build) return;
+      this.chamberOf(F.id).teams.forEach((tid) => {
+        if (this.team(tid)) map.set(tid, F.id);
+      });
+    });
+    this.sealCache = { key, map };
+    return map;
+  }
+  /** A sealed team pauses when its drive is pulled. */
+  paused(teamId: string) {
+    const c = this.sealedMap().get(teamId);
+    return !!c && this.chamberOf(c).lamp === 'blink';
+  }
+  chamberAtPoint(x: number, y: number): string | null {
+    for (const F of this.m.furn) if (F.type === 'chamber' && !F.build && Math.abs(x - F.x) < 56 && Math.abs(y - F.y) < 48) return F.id;
+    return null;
+  }
+  moveIn(teamId: string, chamberId: string) {
+    const F = this.furnById(chamberId),
+      T = this.team(teamId);
+    if (!this.builder || !F || F.type !== 'chamber' || !T) return;
+    if (F.build) return this.toast('The chamber is still being built.');
+    if (this.sealedMap().has(teamId)) return this.toast(T.name + ' is already in a chamber.');
+    if (!this.members(T).length) return this.toast(T.name + ' has no agents to move in.');
+    this.stream.emit({ kind: 'chamber.seal', chamber: chamberId, team: teamId }, NOW());
+    this.card('EQUIP', 'CHAMBER', '', T.name + ' moved in and the door closed. Its wires to outside tools are cut.');
+    this.syncAllMeetings();
+    this.notify();
+  }
+  moveOut(teamId: string) {
+    const cid = this.sealedMap().get(teamId);
+    if (!this.builder || !cid) return;
+    this.stream.emit({ kind: 'chamber.seal', chamber: cid, team: teamId, out: true }, NOW());
+    this.card('EQUIP', 'CHAMBER', '', (this.team(teamId)?.name || 'A team') + ' moved out. Its wires work again.');
+    this.syncAllMeetings();
+    this.notify();
+  }
+  /** View mode too. The preview finds no hardware and shows one sample; nothing real is read. */
+  detectDrives(id: string) {
+    const F = this.furnById(id);
+    if (!F || F.type !== 'chamber' || F.build) return;
+    const cur = this.chamberOf(id);
+    this.notes[id] = 'No hardware drives found. Showing a sample.';
+    if (cur.drive && cur.drive.present) {
+      this.notes[id] = 'The sample drive is already here.';
+      return this.notify();
+    }
+    this.m.furn = this.m.furn.filter((x) => !(x.type === 'drive' && x.chamber === id));
+    F.link = null;
+    const d = detectSampleDrive(this.stream, id, NOW());
+    let edge = F.x + 190;
+    this.m.teams.forEach((T) => {
+      if (T.state !== 'hidden') edge = Math.max(edge, T.x + roomW(this.members(T).length) / 2 + 150);
+    });
+    // Below every team, so the data cable runs clear of their boxes.
+    let low = F.y + 6;
+    this.m.teams.forEach((T) => {
+      if (T.state !== 'hidden') low = Math.max(low, T.y + roomH(this.members(T).length) / 2 + 70);
+    });
+    const D: Furniture = { id: d.id, type: 'drive', x: edge, y: low, on: [], born: NOW(), owner: null, wires: [], chamber: id };
+    this.m.furn.push(D);
+    // Keep the new drive on screen.
+    const sx = this.pan.x + D.x * this.zoom,
+      room = (typeof window !== 'undefined' ? window.innerWidth : 1400) - this.feedW() - 90;
+    if (sx > room) this.pan = { x: this.pan.x - (sx - room), y: this.pan.y };
+    this.toast(this.notes[id]);
+    this.dirty = true;
+  }
+  /** The data cable: the chamber's port to the drive. Starting the check is a scripted event, not a flag. */
+  cableTo(driveId: string): boolean {
+    const C = this.wiring ? this.furnById(this.wiring) : null,
+      D = this.furnById(driveId);
+    if (!C || C.type !== 'chamber' || !D || D.type !== 'drive') return false;
+    if (D.chamber !== C.id) {
+      this.toast('That drive was detected for another chamber.');
+      return true;
+    }
+    const v = this.chamberOf(C.id);
+    if (!v.teams.length) {
+      this.toast('Move a team into the chamber first.');
+      return true;
+    }
+    if (!v.drive || !v.drive.present || v.drive.id !== D.id) return true;
+    C.link = D.id;
+    this.wiring = null;
+    connectDrive(this.stream, C.id, v.drive, NOW());
+    this.card('EQUIP', 'CHAMBER', '', 'Data cable run to the sample drive. Checking it now (simulated).');
+    this.dirty = true;
+    this.notify();
+    return true;
+  }
+  /** View mode too: simulate pulling the drive. The lamp blinks red and the sealed team pauses. */
+  pullDriveNow(id: string) {
+    const F = this.furnById(id),
+      v = this.chamberOf(id);
+    if (!F || !v.drive || !v.drive.present) return;
+    pullDrive(this.stream, v.drive.id, NOW());
+    this.m.furn = this.m.furn.filter((x) => x.id !== v.drive!.id);
+    F.link = null;
+    this.notes[id] = 'Drive removed. The team is paused.';
+    this.dirty = true;
+    this.notify();
+  }
+  choosePurpose(id: string, purpose: Purpose) {
+    this.stream.emit({ kind: 'chamber.open', chamber: id, purpose }, NOW());
+    this.notes[id] = '';
+    this.notify();
+  }
+  closeChamber(id: string) {
+    this.stream.emit({ kind: 'chamber.close', chamber: id }, NOW());
+    this.notify();
+  }
+  /** The export gate: the one way data leaves (or enters). It shows what moves and waits for an answer. */
+  gateAsk(id: string) {
+    const v = this.chamberOf(id);
+    const kind = v.purpose === 'import' ? 'data.import' : 'data.export';
+    this.stream.emit({ kind, chamber: id, items: ['sample-report.txt (sample)', 'sample-figures.csv (sample)'], status: 'ask' }, NOW());
+    this.notify();
+  }
+  gateAnswer(id: string, ok: boolean) {
+    const v = this.chamberOf(id);
+    if (!v.gate || v.gate.status !== 'ask') return;
+    this.stream.emit({ kind: v.gate.kind === 'import' ? 'data.import' : 'data.export', chamber: id, items: v.gate.items, status: ok ? 'approved' : 'held' }, NOW());
+    this.notify();
+  }
+  syncAllMeetings() {
+    this.m.furn.forEach((F) => {
+      if (F.type === 'meeting') this.syncMeeting(F);
+    });
+  }
+  /** Keeps a meeting's open teams and agenda rows in step with its wires. Idempotent: it emits only what changed. */
+  syncMeeting(F: Furniture) {
+    if (F.build) return;
+    this.synced.add(F.id);
+    const sealed = this.sealedMap();
+    const teams = (F.wires || []).filter((id) => {
+      const T = this.team(id);
+      return !!T && T.state !== 'hidden' && !sealed.has(id);
+    });
+    const now = NOW();
+    const st = this.meetingOf(F.id);
+    if (st.teams.join() !== teams.join()) this.stream.emit({ kind: 'meeting.open', meeting: F.id, teams }, now);
+    if (!teams.length) return;
+    if (!st.agenda.length) {
+      for (let k = 1; k <= 3; k++) this.stream.emit({ kind: 'meeting.dep', meeting: F.id, step: k, team: teams[(k - 1) % teams.length], what: whatFor(k), needs: k > 1 ? k - 1 : undefined }, now);
+    } else {
+      st.agenda.forEach((a) => {
+        if (!teams.includes(a.team)) this.stream.emit({ kind: 'meeting.dep', meeting: F.id, step: a.step, team: teams[(a.step - 1) % teams.length], what: a.what, needs: a.needs }, now);
+      });
+    }
+  }
+  meetingAddStep(id: string) {
+    const st = this.meetingOf(id);
+    if (!this.builder) return;
+    if (!st.teams.length) {
+      this.notes[id] = 'Wire a team to the table first.';
+      return this.notify();
+    }
+    if (st.agenda.length >= 8) {
+      this.notes[id] = 'Eight steps is the most for now.';
+      return this.notify();
+    }
+    const step = st.agenda.reduce((n, a) => Math.max(n, a.step), 0) + 1;
+    this.stream.emit({ kind: 'meeting.dep', meeting: id, step, team: st.teams[(step - 1) % st.teams.length], what: whatFor(step), needs: step > 1 ? step - 1 : undefined }, NOW());
+    this.notes[id] = '';
+    this.notify();
+  }
+  meetingSetNeeds(id: string, step: number, needs: number | undefined) {
+    if (!this.builder) return;
+    const st = this.meetingOf(id);
+    const row = st.agenda.find((a) => a.step === step);
+    if (!row) return;
+    const map = new Map(st.agenda.map((a) => [a.step, { team: a.team, what: a.what, needs: a.needs }] as const));
+    if (needs !== undefined && wouldCycle(map, step, needs)) {
+      this.notes[id] = cycleMessage(step, needs);
+      return this.notify();
+    }
+    this.stream.emit({ kind: 'meeting.dep', meeting: id, step, team: row.team, what: row.what, needs }, NOW());
+    this.notes[id] = '';
+    this.notify();
+  }
+  meetingSetTeam(id: string, step: number, team: string) {
+    if (!this.builder) return;
+    const row = this.meetingOf(id).agenda.find((a) => a.step === step);
+    if (!row) return;
+    this.stream.emit({ kind: 'meeting.dep', meeting: id, step, team, what: row.what, needs: row.needs }, NOW());
+    this.notify();
+  }
+  /** View mode too. Starts the scripted run; every card then goes through the blind check. */
+  meetingRun(id: string) {
+    const F = this.furnById(id);
+    if (!F || F.type !== 'meeting' || F.build || this.meetingDriver.running(id)) return;
+    const st = this.meetingOf(id);
+    const off = st.agenda.find((a) => !st.teams.includes(a.team));
+    if (!st.teams.length || !st.agenda.length) this.notes[id] = 'Wire a team to the table first.';
+    else if (off) this.notes[id] = 'Step ' + off.step + ': that team is offline.';
+    else {
+      this.notes[id] = '';
+      this.meetingDriver.start(id, NOW());
+    }
+    this.notify();
+  }
   deleteFurn(id: string) {
     const F = this.furnById(id);
     if (!F) return;
-    this.m.furn = this.m.furn.filter((x) => x.id !== id);
+    this.sealCache.key = '';
+    this.m.furn = this.m.furn.filter((x) => x.id !== id && !(F.type === 'chamber' && x.type === 'drive' && x.chamber === id));
     this.card('EQUIP', FT[F.type].name, '', 'Removed from the floor.');
+    if (F.type === 'chamber') this.syncAllMeetings();
     this.sel = null;
     this.dirty = true;
     this.notify();
@@ -1629,7 +1917,7 @@ export class Sim {
       const live = this.m.agents.filter((a) => {
         const T = this.team(a.team);
         // M8: real laptop jobs move only when a real event says so.
-        return T && T.state === 'active' && !T.live && a.id !== dragA;
+        return T && T.state === 'active' && !T.live && a.id !== dragA && !this.paused(T.id);
       });
       live.forEach((a) => {
         if (!a.doing && a.backlog.length) a.doing = a.backlog.shift()!;
@@ -1675,6 +1963,10 @@ export class Sim {
       return false;
     });
     this.tickBuilds(t);
+    this.meetingDriver.tick(t);
+    this.m.furn.forEach((F) => {
+      if (F.type === 'meeting' && !F.build && !this.synced.has(F.id)) this.syncMeeting(F);
+    });
     this.tickRecorders(t);
     if (this.evLog.length > 400) this.evLog = this.evLog.slice(-300);
     if (this.dirty && t - this.lastSave > 1.5 && !this.drag) this.saveIdle();
@@ -2056,6 +2348,13 @@ export class Sim {
       wx = F.x;
       wy = F.y;
       r = 26;
+      if (F.type === 'chamber' || F.type === 'meeting' || F.type === 'drive') {
+        r = F.type === 'meeting' ? 70 : 44;
+        p.title = D.name;
+        p.sub = 'PREVIEW · simulated';
+        p.fac = facilityPanel(this, F);
+        p.acts = B && F.type !== 'drive' ? [btn('REMOVE', () => this.deleteFurn(F.id), 'danger')] : [];
+      } else {
       const ts = this.inRange(F);
       p.title = D.name;
       p.sub = F.build ? 'being built' : F.owner ? 'inside ' + (this.team(F.owner)?.name || 'a team') + ' · team only' : ts.length ? 'shared · wired to ' + ts.length + (ts.length === 1 ? ' team' : ' teams') : 'shared · not wired to any team yet';
@@ -2102,6 +2401,7 @@ export class Sim {
       if (B && !F.owner && !F.build) p.pin = [btn('+ WIRE TO A TEAM', () => this.startWiring(F.id), 'primary')];
       p.acts = B ? [btn('REMOVE', () => this.deleteFurn(F.id), 'danger')] : [];
       p.hint = F.build ? 'A builder is on it. It starts working when the bar fills.' : F.owner ? 'Inside ' + (this.team(F.owner)?.name || 'the team') + '’s quarters: it lives in that team’s folder and serves only them. Drag it outside to share it with other teams (slower to wire).' : F.type === 'rec' ? 'It watches; agents don’t walk to it.' : 'Agents with a path to this unit will have access to it.';
+      }
     } else {
       const s = m.sups[sel.id];
       if (!s) return null;
@@ -2227,23 +2527,38 @@ export class Sim {
     this.apos = {};
     const eqMap: Record<string, Furniture[]> = {};
     // Wires: one orthogonal path per (shared item, team), kept out of every other team's box.
-    const wires: { id: string; pts: string; dot: [number, number]; on: boolean }[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const wires: any[] = [];
     const boxes = m.teams
       .filter((T) => T.state !== 'hidden')
       .map((T) => {
         const n = this.members(T).length;
         return { id: T.id, x0: T.x - roomW(n) / 2 - 8, x1: T.x + roomW(n) / 2 + 8, y0: T.y - roomH(n) / 2 - 8, y1: T.y + roomH(n) / 2 + 8 };
       });
-    m.furn.forEach((F) =>
-      this.inRange(F).forEach((T) => {
-        (eqMap[T.id] = eqMap[T.id] || []).push(F);
-        if (F.owner) return;
+    const sealed = this.sealedMap();
+    const fviews = new Map<string, any>();
+    m.furn.forEach((F) => {
+      if (F.type === 'meeting' && !F.build) fviews.set(F.id, meetingRV(this, F, t));
+      // Tools equip the teams they serve. Meeting spaces, chambers and drives are not tools.
+      if (F.type !== 'meeting') this.inRange(F).forEach((T) => (eqMap[T.id] = eqMap[T.id] || []).push(F));
+      if (F.owner || F.build || F.type === 'chamber' || F.type === 'drive') return;
+      // Wires follow F.wires directly, so a team sealed in a chamber still shows its cut wires (grey, dashed).
+      (F.wires || []).forEach((tid) => {
+        const T = this.team(tid);
+        if (!T || T.state === 'hidden') return;
         const side: -1 | 1 = F.x < T.x ? -1 : 1;
         const plug = this.plugPoint(T, side);
-        const pts = routeWire([F.x, F.y], plug, side, boxes.filter((b) => b.id !== T.id));
-        wires.push({ id: F.id + '>' + T.id, pts: pts.map((q) => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' '), dot: plug, on: this.wiring === F.id });
-      }),
-    );
+        const door = F.type === 'meeting' ? fviews.get(F.id)?.doors[tid] : null;
+        const pts = routeWire(door ? [door.x, door.y] : [F.x, F.y], plug, side, boxes.filter((b) => b.id !== T.id));
+        wires.push({ id: F.id + '>' + T.id, pts: pts.map((q) => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' '), dot: plug, on: this.wiring === F.id, color: F.type === 'meeting' ? teamColor(this, tid) : '#15140f', cut: sealed.has(tid), cable: false });
+      });
+      return;
+    });
+    // Data cables: a chamber's port to its drive. A thicker class of wire.
+    m.furn.forEach((C) => {
+      const D = C.type === 'chamber' && C.link ? this.furnById(C.link) : null;
+      if (C.type === 'chamber' && D && !C.build) wires.push({ id: C.id + '>' + D.id, pts: cablePts(C, D), dot: null, on: this.wiring === C.id, color: '#15140f', cut: false, cable: true });
+    });
     this.eqMap = eqMap;
     const wiringF = this.wiring ? this.furnById(this.wiring) : null;
     if (this.wiring && !wiringF) this.wiring = null;
@@ -2261,9 +2576,19 @@ export class Sim {
       // The builder walks in from the left during the first fifth, then hammers on the spot.
       const walkIn = cl(bl / 0.2, 0, 1);
       const hammer = !this.reducedMotion && walkIn >= 1 ? Math.abs(Math.sin(t * 14)) : 0;
+      const fv = F.build ? null : F.type === 'chamber' ? chamberRV(this, F, t) : F.type === 'drive' ? driveRV(this, F, t) : fviews.get(F.id) || null;
+      if (fv && fv.motion) motion = true;
+      const fac = F.type === 'chamber' || F.type === 'meeting' || F.type === 'drive';
       furn.push({
+        fac,
+        fv,
+        bad: dragging && this.illegalAt(F.type, F.x, F.y),
+        hot: this.hoverChamber === F.id,
+        armedDrive: !!wiringF && wiringF.type === 'chamber' && F.type === 'drive' && F.chamber === wiringF.id,
+        plusPos: F.type === 'chamber' ? { l: 34, t: -8 } : F.type === 'meeting' ? { l: 50, t: -76 } : { l: 14, t: -34 },
+        labelTop: F.type === 'chamber' ? 38 : F.type === 'meeting' ? 76 : F.type === 'drive' ? 26 : 34,
         building: !!F.build,
-        plus: this.builder && !F.owner && !F.build,
+        plus: this.builder && !F.owner && !F.build && F.type !== 'drive',
         wiringThis: this.wiring === F.id,
         startWire: () => this.startWiring(F.id),
         prog: bl,
@@ -2278,12 +2603,12 @@ export class Sim {
         kind: F.type,
         t,
         label: D.name,
-        sub: F.build ? 'building ' + Math.round(bl * 100) + '%' : owned ? 'team only' : nOn + ' on · ' + plural(this.inRange(F).length, 'team'),
+        sub: F.build ? 'building ' + Math.round(bl * 100) + '%' : fac ? (F.type === 'drive' ? 'simulated' : 'PREVIEW · simulated') : owned ? 'team only' : nOn + ' on · ' + plural(this.inRange(F).length, 'team'),
         showRange: isSel || dragging,
         rL: -FR,
         rD: FR * 2,
         z: isSel || dragging ? 8 : 0,
-        sc: (born < 1 ? outBack(born) : 1) * (dragging ? 1.1 : 1) * (owned ? 0.55 : 1),
+        sc: (born < 1 ? outBack(born) : 1) * (dragging ? 1.05 : 1) * (owned ? 0.55 : 1),
         down: (e: React.PointerEvent) => this.nodeDown(e, 'furn', F.id),
       });
     });
@@ -2529,7 +2854,12 @@ export class Sim {
         .filter((v, j, arr) => arr.indexOf(v) === j)
         .join(' · ');
       const anyStuck = mem.some((a) => a.blocked);
+      const inCh = sealed.get(T.id) || null;
+      const isPaused = !!inCh && this.chamberOf(inCh).lamp === 'blink';
       rooms.push({
+        locked: !!inCh,
+        lockText: isPaused ? 'PAUSED' : 'IN CHAMBER',
+        paused: isPaused,
         ls: labelScale,
         id: T.id,
         l: T.x - w / 2,
@@ -2542,8 +2872,8 @@ export class Sim {
         ripple: fe >= 0 && fe < 0.7,
         ro: 0.5 * (1 - cl(fe / 0.7, 0, 1)),
         rs: 1 + cl(fe / 0.7, 0, 1) * 0.35,
-        bg: pend ? 'rgba(251,250,245,.55)' : hot ? '#ffffff' : '#fbfaf5',
-        border: pend ? '2px dashed rgba(21,20,15,.28)' : anyStuck ? '3px solid #d63c2f' : hot ? '3px solid #15140f' : '2px solid #15140f',
+        bg: inCh ? '#ecebe4' : pend ? 'rgba(251,250,245,.55)' : hot ? '#ffffff' : '#fbfaf5',
+        border: inCh ? '2px solid #6b6a62' : pend ? '2px dashed rgba(21,20,15,.28)' : anyStuck ? '3px solid #d63c2f' : hot ? '3px solid #15140f' : '2px solid #15140f',
         shadow: pend ? 'none' : isSel || hot ? '0 4px 0 rgba(21,20,15,.1), 0 0 0 6px rgba(21,20,15,.1)' : '0 4px 0 rgba(21,20,15,.1)',
         labelColor: pend ? '#6b6a62' : '#15140f',
         name: T.name,
@@ -2556,14 +2886,14 @@ export class Sim {
           return { c: md === 'working' ? '#fbfaf5' : MOOD[md].c, w: md === 'working' ? 6 : 12 };
         }),
         desks: dk.map((d) => ({ l: w / 2 + d[0] - 10, t: h / 2 + d[1] + 8, c: pend ? 'rgba(21,20,15,.2)' : 'rgba(21,20,15,.5)' })),
-        agents,
+        agents: inCh ? [] : agents,
         plugs: ([-1, 1] as const).map((sd) => {
           const wired = !!wiringF && (wiringF.wires || []).includes(T.id);
           return {
             side: sd,
             left: sd < 0 ? -9 : w - 9,
             top: h / 2 - 13,
-            armed: !!wiringF && !pend,
+            armed: !!wiringF && wiringF.type !== 'chamber' && !pend && !inCh,
             wired,
             used: m.furn.some((F) => !F.owner && !F.build && (F.wires || []).includes(T.id) && (F.x < T.x ? -1 : 1) === sd),
             go: () => this.plugClick(T.id),
@@ -2683,8 +3013,10 @@ export class Sim {
     }
     const newF = !!(dr && dr.kind === 'newfurn' && dr.moved);
     const overWorld = newF && this.mouse.y < vh - 120 && this.mouse.x < vw - this.feedW();
-    const ghost = newF ? { x: this.mouse.x, y: this.mouse.y, kind: dr!.type, t, sc: overWorld ? z : 0.9, label: overWorld ? 'place ' + FT[dr!.type!].name : 'drag onto the floor' } : { x: 0, y: 0, kind: 'mcp' as const, t, sc: 1, label: '' };
-    const reTag = this.hoverMgr && S[this.hoverMgr] ? { x: this.mouse.x + 16, y: this.mouse.y + 18, text: this.managerFull(this.hoverMgr) ? S[this.hoverMgr].name + ' is full (' + MAX_TEAMS_PER_MANAGER + '/' + MAX_TEAMS_PER_MANAGER + ')' : '→ report to ' + S[this.hoverMgr].name + ' (' + this.managerLoad(this.hoverMgr) + '/' + MAX_TEAMS_PER_MANAGER + ')' } : { x: 0, y: 0, text: '' };
+    const gw = newF && overWorld ? this.toWorld(this.mouse.x, this.mouse.y) : null;
+    const ghostBad = !!gw && this.illegalAt(dr!.type!, gw.x, gw.y);
+    const ghost = newF ? { x: this.mouse.x, y: this.mouse.y, kind: dr!.type, t, sc: overWorld ? z : 0.9, label: overWorld ? (ghostBad ? 'not inside quarters' : 'place ' + FT[dr!.type!].name) : 'drag onto the floor', bad: ghostBad, ok: !!gw && !ghostBad && !!FACILITY_RULES[dr!.type!]?.sharedOnly } : { x: 0, y: 0, kind: 'mcp' as const, t, sc: 1, label: '', bad: false, ok: false };
+    const reTag = this.hoverChamber ? { x: this.mouse.x + 16, y: this.mouse.y + 18, text: '→ move in and seal the door' } : this.hoverMgr && S[this.hoverMgr] ? { x: this.mouse.x + 16, y: this.mouse.y + 18, text: this.managerFull(this.hoverMgr) ? S[this.hoverMgr].name + ' is full (' + MAX_TEAMS_PER_MANAGER + '/' + MAX_TEAMS_PER_MANAGER + ')' : '→ report to ' + S[this.hoverMgr].name + ' (' + this.managerLoad(this.hoverMgr) + '/' + MAX_TEAMS_PER_MANAGER + ')' } : { x: 0, y: 0, text: '' };
 
     const nowMs = Date.now();
     const ago = (ms: number) => (ms < 10000 ? 'now' : ms < 60000 ? Math.floor(ms / 1000) + 's' : Math.floor(ms / 60000) + 'm');
@@ -2714,6 +3046,8 @@ export class Sim {
 
     const pop = sel ? this.buildPop(t, vw, vh) : null;
     const tgt = S[this.addTargetId()] || S.pip;
+    const walkers = walkersFor(this, t);
+    if (walkers.length) motion = true;
     if (this.sel && t - this.popAt < 0.3) motion = true;
     this.motion = motion;
 
@@ -2738,10 +3072,12 @@ export class Sim {
       dragAg,
       hasGhost: newF,
       ghost,
-      hasReTag: !!this.hoverMgr,
+      hasReTag: !!this.hoverMgr || !!this.hoverChamber,
+      toast: t < this.toastUntil ? this.toastText : '',
+      walkers,
       reTag,
       dock: FT.mcp
-        ? (['mcp', 'db', 'books', 'rec'] as const).map((k) => ({
+        ? DOCK_KINDS.map((k) => ({
             kind: k,
             t,
             short: FT[k].short,
@@ -2807,6 +3143,10 @@ export class Sim {
           /* ignore */
         }
         this.m = blank();
+        this.stream = new EventStream();
+        this.meetingDriver = new MeetingDriver(this.stream);
+        this.synced.clear();
+        this.notes = {};
         this.sel = null;
         this.pulses = [];
         this.disp = {};

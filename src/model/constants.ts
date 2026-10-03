@@ -70,14 +70,40 @@ export const FT: Record<FurnKind, { name: string; short: string; desc: string; o
     optsLabel: 'RECAP EVERY',
     opts: ['Every 10 min', 'Every hour', 'Daily digest', 'Only when someone’s stuck'],
   },
+  chamber: {
+    name: 'CHAMBER',
+    short: 'CHAMBER',
+    desc: 'A sealed room for a team and one drive. A preview: the real checks are not built yet.',
+    optsLabel: '',
+    opts: [],
+  },
+  meeting: {
+    name: 'MEETING',
+    short: 'MEETING',
+    desc: 'A round table where teams hand each other typed cards. Every card is checked at the door.',
+    optsLabel: '',
+    opts: [],
+  },
+  drive: {
+    name: 'DRIVE',
+    short: 'DRIVE',
+    desc: 'A sample drive. Simulated.',
+    optsLabel: '',
+    opts: [],
+  },
 };
 export const FT_KEYS: FurnKind[] = ['mcp', 'db', 'books', 'rec'];
+/** The toolbar, in order. The drive is never in it: it only appears when a chamber detects one. */
+export const DOCK_KINDS: FurnKind[] = ['mcp', 'db', 'books', 'rec', 'chamber', 'meeting'];
 /** Dock hover/hold tip copy — separate from the popup description, per the spec's exact wording. */
 export const DOCK_TIP: Record<FurnKind, string> = {
   mcp: 'Plugs the team into your apps: Gmail, Calendar, Drive, your bank.',
   db: 'Something to look things up in: receipts, contacts, records.',
   books: 'Your rules and preferences, so they act the way you would.',
   rec: 'Watches a team and sends you a recap on a schedule.',
+  chamber: 'A sealed room for one team and one drive. Preview only: simulated.',
+  meeting: 'A round table where teams pass checked cards. Preview only: simulated.',
+  drive: 'A sample drive. Simulated.',
 };
 /** Demo time compression for the recorder: index-matched to FT.rec.opts. `null` = event-triggered, not periodic. */
 export const REC_DEMO_SECS: (number | null)[] = [45, 90, 180, null];
@@ -88,4 +114,17 @@ export const REC_LABELS = ['last 10 min', 'last hour', 'today', 'since last chec
  * only if it breaks the defaults, a row here. Default: can sit in a team's quarters (team only) or
  * outside (shared, wired with plugs).
  */
-export const FACILITY_RULES: Partial<Record<FurnKind, { teamOnly?: boolean; sharedOnly?: boolean; buildScale?: number }>> = {};
+export interface FacilityRule {
+  teamOnly?: boolean;
+  sharedOnly?: boolean;
+  buildScale?: number;
+  /** How far its footprint reaches from its centre: it must stand this far clear of every team's quarters. */
+  pad?: number;
+  /** Said when a drop inside quarters is nudged out. */
+  nudgeMsg?: string;
+}
+export const FACILITY_RULES: Partial<Record<FurnKind, FacilityRule>> = {
+  chamber: { sharedOnly: true, buildScale: 1.2, pad: 50, nudgeMsg: 'Chambers stand on their own.' },
+  meeting: { sharedOnly: true, buildScale: 0.9, pad: 80, nudgeMsg: 'Meeting spaces go outside team quarters' },
+  drive: { sharedOnly: true, pad: 30 },
+};

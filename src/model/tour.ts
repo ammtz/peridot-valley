@@ -46,4 +46,16 @@ export const TOUR_STEPS: TourStep[] = [
     showDock: true,
     text: () => 'Tap a supervisor to see what it Manages: the teams and supervisors under it. One supervisor can manage up to 5. Renaming, hiring and moving things are Builder mode only.',
   },
+  {
+    id: 'meeting',
+    spot: 'toolbar',
+    showDock: true,
+    text: () => 'MEETING (a preview): build one outside the teams, wire two teams to it with its +, and add a 2-step agenda. Every card between teams stops at a blind check at the door. A refused card goes back with a reason.',
+  },
+  {
+    id: 'chamber',
+    spot: 'toolbar',
+    showDock: true,
+    text: () => 'CHAMBER (a preview): build it, move a team in, press Detect drives for the sample drive, run its data cable from the port, and pick a purpose when the lamp turns green. That green is simulated: the real checks are not built yet.',
+  },
 ];

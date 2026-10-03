@@ -64,6 +64,25 @@ export function FurnitureIcon({ kind, t }: { kind: FurnKind; t: number }) {
           <div style={{ position: 'absolute', left: 8, top: 19, width: 6, height: 6, borderRadius: '50%', background: '#d63c2f', opacity: 0.4 + 0.6 * Math.abs(Math.sin(t * 5)) }} />
         </>
       )}
+      {kind === 'chamber' && (
+        <>
+          <div style={{ position: 'absolute', left: 4, top: 7, width: 40, height: 36, boxSizing: 'border-box', border: '3.5px solid #15140f', borderRadius: 3, background: 'repeating-linear-gradient(45deg,#d4d1c3 0 5px,#dedbce 5px 10px)', boxShadow: '0 3px 0 rgba(21,20,15,.15)' }} />
+          <div style={{ position: 'absolute', left: 17, top: 21, width: 14, height: 22, background: '#15140f' }} />
+          <div style={{ position: 'absolute', left: 20, top: 12, width: 9, height: 9, borderRadius: '50%', border: '2px solid #15140f', boxSizing: 'border-box', background: '#d63c2f' }} />
+          <div style={{ position: 'absolute', left: 43, top: 20, width: 5, height: 8, border: '2px solid #15140f', boxSizing: 'border-box', background: '#fbfaf5' }} />
+        </>
+      )}
+      {kind === 'meeting' && (
+        <>
+          <div style={{ position: 'absolute', left: 2, top: 2, width: 44, height: 44, borderRadius: '50%', boxSizing: 'border-box', border: '3px solid #15140f', background: 'repeating-conic-gradient(rgba(176,146,98,.45) 0deg 30deg, rgba(228,210,178,.4) 30deg 60deg)' }} />
+          <div style={{ position: 'absolute', left: 14, top: 14, width: 20, height: 20, borderRadius: '50%', boxSizing: 'border-box', border: '2.5px solid #15140f', background: '#fbfaf5' }} />
+        </>
+      )}
+      {kind === 'drive' && (
+        <>
+          <div style={{ position: 'absolute', left: 4, top: 17, width: 40, height: 15, boxSizing: 'border-box', border: '2.5px solid #15140f', borderRadius: 3, background: 'repeating-linear-gradient(45deg,#e8b923 0 5px,#fbfaf5 5px 10px)' }} />
+        </>
+      )}
     </div>
   );
 }

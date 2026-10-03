@@ -28,6 +28,15 @@ export function Room({ r }: { r: any }) {
           <span style={{ marginLeft: 6, fontSize: 8.5, fontWeight: 800, letterSpacing: '.06em', padding: '1px 4px', borderRadius: 4, background: '#15140f', color: '#f4f3ee' }}>{r.eqTag}</span>
         )}
       </div>
+      {r.locked && (
+        <div style={{ position: 'absolute', right: -6, top: -13, display: 'flex', alignItems: 'center', gap: 4, padding: '2px 6px 2px 5px', borderRadius: 6, border: '2px solid #15140f', background: r.paused ? '#e8b923' : '#15140f', color: r.paused ? '#15140f' : '#f4f3ee', fontSize: 7.5, fontWeight: 800, letterSpacing: '.06em', pointerEvents: 'none', zIndex: 5 }}>
+          <span style={{ position: 'relative', width: 9, height: 11, display: 'inline-block' }}>
+            <span style={{ position: 'absolute', left: 1.5, top: 0, width: 6, height: 6, boxSizing: 'border-box', border: '1.5px solid currentColor', borderBottom: 'none', borderRadius: '3px 3px 0 0' }} />
+            <span style={{ position: 'absolute', left: 0, top: 5, width: 9, height: 6, borderRadius: 1.5, background: 'currentColor' }} />
+          </span>
+          {r.lockText}
+        </div>
+      )}
       {r.empty && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 600, color: '#6b6a62', letterSpacing: '.04em', pointerEvents: 'none', textAlign: 'center', padding: '0 12px' }}>
           drag agents here

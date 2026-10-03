@@ -1,4 +1,4 @@
-export type FurnKind = 'mcp' | 'db' | 'books' | 'rec';
+export type FurnKind = 'mcp' | 'db' | 'books' | 'rec' | 'chamber' | 'meeting' | 'drive';
 export type TeamState = 'active' | 'pending' | 'hidden';
 export type Mood = 'working' | 'flow' | 'overwhelmed' | 'bored' | 'frustrated' | 'stalled' | 'pending';
 export type NodeKind = 'agent' | 'team' | 'sup' | 'furn';
@@ -65,6 +65,10 @@ export interface Furniture {
   owner?: string | null;
   /** Which of the quarters' 4 slots, when owned. */
   slot?: number | null;
+  /** Chamber only: the sample drive this chamber's data cable runs to (layout, not state). */
+  link?: string | null;
+  /** Drive only: the chamber it was detected for. */
+  chamber?: string | null;
 }
 
 export interface Need {
@@ -112,3 +116,22 @@ export interface Settings {
   alwaysShowNames: boolean;
   thoughts: 'icons' | 'always' | 'off';
 }
+
+// Round 3 (isolation chamber and meeting space). Layout (x, y) is UI state. Phase, green, status and
+// satisfied are read only from the event fold (src/model/facility.ts): today from a scripted stream,
+// later from `mero serve`.
+export type FacilityKind = 'team' | 'chamber' | 'meeting' | 'drive';
+export type Wire = { id: string; from: string; to: string; kind: 'data' | 'dep' | 'drive' };
+export type DriveInfo = { id: string; label: string; bus: 'usb' | 'net' | 'other'; fsUuid: string; present: boolean; simulated: boolean };
+export type ChamberState = {
+  id: string;
+  teams: string[];
+  drive?: DriveInfo;
+  phase: 'empty' | 'drive_seen' | 'sealed' | 'verifying' | 'open' | 'closed';
+  /** Derived from the last chamber.verify; never set by the UI. */
+  green: boolean;
+  purpose?: 'import' | 'work' | 'export' | 'archive';
+};
+export type AgendaItem = { step: number; team: string; what: string; needs?: number; status: 'waiting' | 'running' | 'done' };
+export type Post = { id: number; fromTeam: string; topic: string; status: 'pending' | 'cleared' | 'blocked'; why?: string };
+export type MeetingState = { id: string; teams: string[]; agenda: AgendaItem[]; posts: Post[] };

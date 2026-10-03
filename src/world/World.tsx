@@ -72,6 +72,10 @@ export function World({ sim, rv }: { sim: Sim; rv: any }) {
         {rv.sups.map((s: any) => (
           <Manager key={s.id} s={s} />
         ))}
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+        {rv.walkers.map((w: any, i: number) => (
+          <div key={i} style={{ position: 'absolute', left: w.x - 6, top: w.y - 6, width: 12, height: 12, borderRadius: 4, background: '#15140f', zIndex: 60, pointerEvents: 'none' }} />
+        ))}
         {rv.hasDragAg && (
           <div style={{ position: 'absolute', left: rv.dragAg.x, top: rv.dragAg.y, width: 0, height: 0, zIndex: 100, pointerEvents: 'none' }}>
             <div style={{ position: 'absolute', left: -12, top: -12, width: 24, height: 24, borderRadius: 7, background: '#15140f', boxShadow: '0 10px 14px rgba(21,20,15,.22)', transform: `rotate(${rv.dragAg.rot}deg)` }}>
