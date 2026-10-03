@@ -57,6 +57,12 @@ export interface Furniture {
   lastAnn?: string;
   lastRecapT?: number | null;
   lastRecapText?: string;
+  /** Set while a builder worker is putting this up. Not kept across reloads. */
+  build?: { start: number; dur: number; team: string | null } | null;
+  /** The team whose quarters this sits in (its own slot), or null for a shared, cross-team facility. */
+  owner?: string | null;
+  /** Which of the quarters' 4 slots, when owned. */
+  slot?: number | null;
 }
 
 export interface Need {

@@ -53,12 +53,16 @@ export function World({ sim, rv }: { sim: Sim; rv: any }) {
       <div style={{ position: 'absolute', left: 0, top: 0, width: 0, height: 0, transform: `translate(${rv.panX}px,${rv.panY}px) scale(${rv.zoom})`, transformOrigin: '0 0', willChange: 'transform' }}>
         <Links lines={rv.lines} ghosts={rv.ghosts} pulses={rv.pulses} />
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-        {rv.furn.map((fu: any) => (
+        {rv.furn.filter((fu: any) => !fu.owned).map((fu: any) => (
           <Furniture key={fu.id} fu={fu} />
         ))}
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         {rv.rooms.map((r: any) => (
           <Room key={r.id} r={r} />
+        ))}
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+        {rv.furn.filter((fu: any) => fu.owned).map((fu: any) => (
+          <Furniture key={fu.id} fu={fu} />
         ))}
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         {rv.sups.map((s: any) => (

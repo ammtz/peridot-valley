@@ -357,3 +357,42 @@ test('every agent has 3+ stuck cases and every pool is varied; stuck picks vary 
   }
   assert.ok(seen.size >= 3);
 });
+
+test('unblocking starts a celebration that ends on its own', () => {
+  const s = make();
+  (globalThis as unknown as { window: unknown }).window = { innerWidth: 1400, innerHeight: 900 };
+  const a = s.m.agents.find((x) => x.name === 'BILLS')!;
+  s.makeBlocked(a);
+  s.unblock(a);
+  assert.ok(s.celebrating[a.id] != null);
+  const body = (sim: Sim) => {
+    const rv = sim.renderVals();
+    return rv.rooms.flatMap((r: { agents: { id: string; bodyBg: string }[] }) => r.agents).find((x: { id: string }) => x.id === a.id).bodyBg as string;
+  };
+  assert.notEqual(body(s), '#15140f');
+  s.celebrating[a.id] = NOW() - 4;
+  assert.equal(body(s), '#15140f');
+  assert.equal(s.celebrating[a.id], undefined);
+  delete (globalThis as unknown as { window?: unknown }).window;
+});
+
+test('a facility in team quarters takes a slot, builds quickly and serves only that team; a shared one is slower', () => {
+  const s = make();
+  const T = s.team('money')!;
+  s.placeFurn('books', T.x, T.y + 5);
+  const inside = s.m.furn[s.m.furn.length - 1];
+  assert.equal(inside.owner, T.id);
+  assert.ok(inside.build, 'a builder is working on it');
+  assert.deepEqual(s.inRange(inside), [], 'serves nobody while it is going up');
+  s.placeFurn('books', T.x + 600, T.y + 600);
+  const shared = s.m.furn[s.m.furn.length - 1];
+  assert.equal(shared.owner, null);
+  assert.ok(shared.build!.dur > inside.build!.dur, 'cross-team wiring costs more');
+  inside.build!.start = NOW() - 100;
+  s.step();
+  assert.equal(inside.build, null);
+  assert.deepEqual(s.inRange(inside).map((x) => x.id), [T.id], 'only its own team');
+  assert.ok(s.members(T).every((a) => s.acking[a.id] != null), 'every agent acknowledges it');
+  for (let i = 0; i < 6; i++) s.placeFurn('db', T.x, T.y + 5);
+  assert.ok(s.m.furn.filter((f) => f.owner === T.id).length <= 4, 'the quarters hold at most 4 slots');
+});

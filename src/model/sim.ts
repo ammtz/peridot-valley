@@ -3,6 +3,14 @@ import { CURRENT_V, MAX_TEAMS_PER_MANAGER, uid, DOCK_TIP, FR, FT, KEY, MGR_NAMES
 import { blank, desks, roomH, roomW, seed } from './seed';
 
 const MAX_HELPERS = 6;
+const CELEBRATE_SECS = 3.6;
+/** Building takes time, like it does in real life. Inside a team's quarters it is just a folder; a shared
+ *  facility needs an API between teams, so it takes about twice as long and grows with each team it serves. */
+const BUILD_SECS_TEAM = 3.2;
+const BUILD_SECS_SHARED = 6;
+const BUILD_SECS_PER_EXTRA_TEAM = 1.2;
+const ACK_SECS = 1.4;
+const SLOTS = 4;
 const HELPER_NAMES = ['ACE', 'BEA', 'CAL', 'DOT', 'ELI', 'FAY', 'GUS', 'HAL', 'IRIS', 'JAX', 'KAI', 'LOU', 'MAE', 'NED', 'OLA', 'PIX', 'QUIN', 'ROO'];
 import { fearFor, stuckCaseFor, TASK_POOL_GENERIC } from './scenarios';
 import { genericAgents, genericTeamPool, helperCount, pickPreset, Q2_OPTIONS, type PresetManagerSeed } from './presets';
@@ -140,6 +148,10 @@ export class Sim {
   renderTicks = 0;
   /** U15/T6: prefers-reduced-motion -- speech shows instantly, bob/pulse/aura stop. */
   reducedMotion = false;
+  /** Agent id -> when its unblock celebration began (seconds, NOW()). Not saved. */
+  celebrating: Record<string, number> = {};
+  /** Agent id -> when it acknowledges a freshly built facility. Not saved. */
+  acking: Record<string, number> = {};
   /** Set by renderVals() when anything is animating this frame; start() then redraws every frame. */
   motion = false;
   /** FIX1: true once layoutPhoneColumn() has reflowed the org into a scrollable column. */
@@ -538,6 +550,7 @@ export class Sim {
       s.furn = (s.furn || []).filter((f: Furniture) => (f.type as string) !== 'board');
       s.furn.forEach((f: Furniture) => {
         f.born = null;
+        f.build = null;
         f.lastRecapT = null;
       });
       s.agents.forEach((a: Agent) => {
@@ -994,7 +1007,9 @@ export class Sim {
         }
         this.reparent(D.kind, D.id!, target);
       } else if (D.kind === 'furn') {
-        this.announceFurn(this.furnById(D.id!));
+        const moved = this.furnById(D.id!);
+        if (moved) this.settleFurn(moved);
+        this.announceFurn(moved);
       }
       this.dirty = true;
     }
@@ -1015,7 +1030,104 @@ export class Sim {
   }
 
   inRange(F: Furniture) {
+    // Still being built: serves nobody yet.
+    if (F.build) return [];
+    // Inside a team's quarters it lives in that team's folder and serves that team only.
+    if (F.owner) {
+      const own = this.team(F.owner);
+      return own && own.state !== 'hidden' ? [own] : [];
+    }
     return this.m.teams.filter((T) => T.state !== 'hidden' && Math.hypot(F.x - T.x, F.y - T.y) < FR);
+  }
+  /** The team whose quarters (the room rectangle) contain this point. */
+  quartersAt(x: number, y: number): Team | null {
+    for (const T of this.m.teams) {
+      if (T.state === 'hidden') continue;
+      const n = this.members(T).length;
+      if (Math.abs(x - T.x) <= roomW(n) / 2 && Math.abs(y - T.y) <= roomH(n) / 2) return T;
+    }
+    return null;
+  }
+  /** World position of a quarters slot: a row along the bottom edge of the floor. */
+  slotPos(T: Team, slot: number) {
+    const n = this.members(T).length,
+      w = roomW(n),
+      h = roomH(n);
+    return { x: T.x - w / 2 + ((slot + 0.5) * w) / SLOTS, y: T.y + h / 2 - 13 };
+  }
+  /** After a drop (new or moved): into quarters means a slot and a team-only build; outside means shared and costlier. */
+  settleFurn(F: Furniture, isNew = false) {
+    const q = this.quartersAt(F.x, F.y);
+    let owner: string | null = null;
+    if (q) {
+      const taken = new Set(this.m.furn.filter((o) => o.id !== F.id && o.owner === q.id).map((o) => o.slot));
+      let best = -1,
+        bd = 1e9;
+      for (let i = 0; i < SLOTS; i++) {
+        if (taken.has(i)) continue;
+        const sp = this.slotPos(q, i);
+        const d = Math.hypot(sp.x - F.x, sp.y - F.y);
+        if (d < bd) {
+          bd = d;
+          best = i;
+        }
+      }
+      if (best >= 0) {
+        owner = q.id;
+        const sp = this.slotPos(q, best);
+        F.x = sp.x;
+        F.y = sp.y;
+        F.slot = best;
+      } else {
+        // All four slots are taken: step outside, where it becomes a shared facility.
+        F.y = q.y + roomH(this.members(q).length) / 2 + 52;
+        this.card('EQUIP', q.name, '', q.name + '’s quarters are full (4 slots). It went outside as a shared ' + FT[F.type].name.toLowerCase() + '.');
+      }
+    }
+    const changed = (F.owner ?? null) !== owner;
+    F.owner = owner;
+    if (!owner) F.slot = null;
+    if (isNew || changed) this.startBuild(F);
+  }
+  startBuild(F: Furniture) {
+    const t = NOW();
+    const reach = F.owner ? 1 : Math.max(1, this.m.teams.filter((T) => T.state !== 'hidden' && Math.hypot(F.x - T.x, F.y - T.y) < FR).length);
+    const dur = F.owner ? BUILD_SECS_TEAM : BUILD_SECS_SHARED + (reach - 1) * BUILD_SECS_PER_EXTRA_TEAM;
+    F.build = { start: t, dur: this.reducedMotion ? Math.min(dur, 1.2) : dur, team: F.owner ?? null };
+    const where = F.owner ? this.team(F.owner)?.name : null;
+    this.card('EQUIP', FT[F.type].name, '', where ? 'A builder is setting up ' + FT[F.type].name.toLowerCase() + ' inside ' + where + '. Team only, quick.' : 'A builder is wiring a shared ' + FT[F.type].name.toLowerCase() + ' between teams. It needs an API, so it takes longer.');
+  }
+  /** Builders finish: the facility goes live, and each agent it serves reads the new context. */
+  tickBuilds(t: number) {
+    // Owned things ride along with their team's quarters; an orphaned one becomes shared.
+    this.m.furn.forEach((F) => {
+      if (!F.owner) return;
+      const T = this.team(F.owner);
+      if (!T) {
+        F.owner = null;
+        F.slot = null;
+        return;
+      }
+      if (this.drag && this.drag.kind === 'furn' && this.drag.id === F.id) return;
+      const sp = this.slotPos(T, F.slot ?? 0);
+      F.x = sp.x;
+      F.y = sp.y;
+    });
+    this.m.furn.forEach((F) => {
+      if (!F.build || t - F.build.start < F.build.dur) return;
+      F.build = null;
+      const served = this.inRange(F);
+      let k = 0;
+      served.forEach((T) =>
+        this.members(T).forEach((a) => {
+          this.acking[a.id] = t + k++ * 0.25;
+        }),
+      );
+      this.announceFurn(F);
+      const names = served.map((T) => T.name).join(', ');
+      this.card('EQUIP', FT[F.type].name, '', FT[F.type].name + ' is up and running' + (names ? ' for ' + names + '. Every agent there has read it.' : '.'));
+      this.dirty = true;
+    });
   }
   announceFurn(F?: Furniture) {
     if (!F) return;
@@ -1027,6 +1139,7 @@ export class Sim {
   placeFurn(type: Furniture['type'], x: number, y: number) {
     const F: Furniture = { id: uid('fx'), type, x, y, on: FT[type].opts.map((_, i) => i === 0), born: NOW() };
     this.m.furn.push(F);
+    this.settleFurn(F, true);
     this.announceFurn(F);
     // U3: don't auto-select (and pop open its sheet) over the tour.
     if (!this.tourOn) {
@@ -1473,6 +1586,7 @@ export class Sim {
       this.card(k, path, who, text);
       return false;
     });
+    this.tickBuilds(t);
     this.tickRecorders(t);
     if (this.evLog.length > 400) this.evLog = this.evLog.slice(-300);
     if (this.dirty && t - this.lastSave > 1.5 && !this.drag) this.saveIdle();
@@ -1590,6 +1704,7 @@ export class Sim {
   }
   unblock(a: Agent) {
     a.blocked = null;
+    this.celebrating[a.id] = NOW();
     this.removeNeeds(a.id, 'blocked');
     this.card('YOU', this.pathName(a.team), a.name, ' is unblocked and back at it.');
     if (this.tourOn && this.tourStep === 1 && this.tourWaiting) {
@@ -1886,7 +2001,7 @@ export class Sim {
       p.noRowsText = 'Drag it close to a team floor.';
       p.rows = ts.map((T) => ({ name: T.name, stat: teamStat(T), dotR: '3px', dotBg: '#fbfaf5', go: () => this.select({ kind: 'team', id: T.id }) }));
       p.acts = [btn('REMOVE', () => this.deleteFurn(F.id), 'danger')];
-      p.hint = F.type === 'rec' ? 'It watches; agents don’t walk to it.' : 'Agents on floors inside the dashed ring walk over to use it and finish work faster.';
+      p.hint = F.build ? 'A builder is on it. It starts working when the bar fills.' : F.owner ? 'Inside ' + (this.team(F.owner)?.name || 'the team') + '’s quarters: it lives in that team’s folder and serves only them. Drag it outside to share it with other teams (slower to wire).' : F.type === 'rec' ? 'It watches; agents don’t walk to it.' : 'Agents on floors inside the dashed ring walk over to use it and finish work faster.';
     } else {
       const s = m.sups[sel.id];
       if (!s) return null;
@@ -2011,7 +2126,19 @@ export class Sim {
       const born = F.born != null ? cl((t - F.born) / 0.5, 0, 1) : 1;
       if (born < 1) motion = true;
       const nOn = F.on.filter(Boolean).length;
+      const bl = F.build ? cl((t - F.build.start) / F.build.dur, 0, 1) : 1;
+      const owned = !!F.owner;
+      if (F.build) motion = true;
+      // The builder walks in from the left during the first fifth, then hammers on the spot.
+      const walkIn = cl(bl / 0.2, 0, 1);
+      const hammer = !this.reducedMotion && walkIn >= 1 ? Math.abs(Math.sin(t * 14)) : 0;
       furn.push({
+        building: !!F.build,
+        prog: bl,
+        owned,
+        wx: lerp(-64, 30, inOutSine(walkIn)),
+        wy: 14 - hammer * 5,
+        wr: hammer * 18,
         ls: labelScale,
         id: F.id,
         x: F.x,
@@ -2019,12 +2146,12 @@ export class Sim {
         kind: F.type,
         t,
         label: D.name,
-        sub: nOn + ' on · ' + plural(this.inRange(F).length, 'team'),
+        sub: F.build ? 'building ' + Math.round(bl * 100) + '%' : owned ? 'team only' : nOn + ' on · ' + plural(this.inRange(F).length, 'team'),
         showRange: isSel || dragging,
         rL: -FR,
         rD: FR * 2,
         z: isSel || dragging ? 8 : 0,
-        sc: (born < 1 ? outBack(born) : 1) * (dragging ? 1.1 : 1),
+        sc: (born < 1 ? outBack(born) : 1) * (dragging ? 1.1 : 1) * (owned ? 0.55 : 1),
         down: (e: React.PointerEvent) => this.nodeDown(e, 'furn', F.id),
       });
     });
@@ -2148,6 +2275,26 @@ export class Sim {
           e2 += look;
           eH = 3;
         }
+        // Unblock celebration: 3.6 s of hopping, a colour change and sparkles. Reduced motion keeps
+        // only the colour change (no hopping, no sparkle flicker).
+        const cAt = this.celebrating[a.id];
+        const ce = cAt != null ? t - cAt : -1;
+        const celeb = ce >= 0 && ce < CELEBRATE_SECS;
+        if (cAt != null && !celeb) delete this.celebrating[a.id];
+        let bodyBg = '#15140f';
+        if (celeb) {
+          const fade = ce > CELEBRATE_SECS - 0.5 ? (CELEBRATE_SECS - ce) / 0.5 : 1;
+          if (!this.reducedMotion) {
+            motion = true;
+            bob = -Math.abs(Math.sin(ce * 9)) * 9 * fade;
+            rot = Math.sin(ce * 18) * 10 * fade;
+            bsc2 = 1 + 0.12 * Math.abs(Math.sin(ce * 9)) * fade;
+            eH = 3.6;
+            eT = 5.2;
+          }
+          const hue = this.reducedMotion ? 145 : (ce * 420) % 360;
+          bodyBg = 'hsl(' + hue.toFixed(0) + ' ' + (fade * 80).toFixed(0) + '% ' + (55 - fade * 7).toFixed(0) + '%)';
+        }
         // U15/T6: prefers-reduced-motion stops the bob, the pulse and the aura.
         if (this.reducedMotion) bob = 0;
         const blink = ((t * 0.9 + ph * 1.37) % 4.3) < 0.13;
@@ -2155,6 +2302,12 @@ export class Sim {
           eT += (eH - 0.8) / 2;
           eH = 0.8;
         }
+        const ackAt = this.acking[a.id];
+        const ackE = ackAt != null ? t - ackAt : -1;
+        if (ackAt != null && ackE >= ACK_SECS) delete this.acking[a.id];
+        const hasAck = ackE >= 0 && ackE < ACK_SECS;
+        if (ackAt != null && ackE < ACK_SECS) motion = true;
+        const ackPop = hasAck ? (this.reducedMotion ? 1 : outBack(cl(ackE / 0.25, 0, 1))) : 0;
         const aSel = !!(sel && sel.kind === 'agent' && sel.id === a.id),
           hov = this.hoverAgent === a.id;
         const notable = md !== 'working' && md !== 'pending';
@@ -2189,7 +2342,11 @@ export class Sim {
           b1L: e1 - 0.8,
           b2L: e2 - 0.8,
           browT: eT - 2.2,
-          isFlow: md === 'flow' && !walking,
+          bodyBg,
+          hasAck,
+          ackSc: ackPop,
+          ackOp: hasAck ? cl((ACK_SECS - ackE) / 0.3, 0, 1) : 0,
+          isFlow: (md === 'flow' && !walking) || (celeb && !this.reducedMotion),
           isOver: md === 'overwhelmed',
           isBored: md === 'bored',
           isFrus: md === 'frustrated',
