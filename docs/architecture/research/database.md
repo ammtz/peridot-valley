@@ -44,7 +44,7 @@ What each option does on append-only, on backup, and on cost.
 
 | Option | Append-only model carries over unchanged? | Backup without stopping the one writer | Monthly cost at one person's use, source, date read |
 |---|---|---|---|
-| A | Yes. No code or schema change; the two triggers and the writer lock stay as they are. | None built in. A plain file copy of `ledger.db` while the writer runs can miss the WAL and give a broken copy. The only safe manual copy is `sqlite3 ledger.db ".backup copy.db"` or `VACUUM INTO`, run by hand. | $0 added. The VPS is already inside the owner's $5 to $10 budget and is priced in the hosting note. Source: the owner's $5 to $10 VPS budget decision, 2026-10-04. |
+| A | Yes. No code or schema change; the two triggers and the writer lock stay as they are. | None built in. A plain file copy of `ledger.db` while the writer runs can miss the WAL and give a broken copy. The only safe manual copy is `sqlite3 ledger.db ".backup copy.db"` or `VACUUM INTO`, run by hand. | $0 added. The VPS is already inside the owner's $5 to $10 budget and is priced in the hosting note. SQLite is public domain, so the software costs $0 (https://www.sqlite.org/copyright.html, read 2026-10-04). The VPS is priced in the hosting note. |
 | B | Yes. `VACUUM INTO` writes a new file and leaves the original unchanged. The copy carries the triggers, because the schema is copied with the data. | `VACUUM INTO` is transactional, and the output is a consistent snapshot. Unlike plain `VACUUM`, it works with other connections holding locks. Source: https://www.sqlite.org/lang_vacuum.html, read 2026-10-04. Off-site copy goes to object storage. | $0 added while the copies stay under 10 GB, which Backblaze B2 stores free. Beyond that, B2 is $6.95 per TB per month. Source: https://www.backblaze.com/cloud-storage/pricing, read 2026-10-04. |
 | C | Yes. Litestream copies WAL pages through the SQLite API and does not change the schema, so the triggers are replicated as part of the file. Source for how it works: https://litestream.io/how-it-works/, read 2026-10-04. | Litestream runs as a separate process. It holds a long-running read transaction and does the checkpoints itself, so the app keeps writing. Source: https://litestream.io/how-it-works/, read 2026-10-04. `ledger.py` already uses WAL mode, which Litestream needs. | $0 added for the software. The site says it costs "pennies per day" in object storage (https://litestream.io/, read 2026-10-04). Storage under 10 GB is free on B2, then $6.95 per TB per month (https://www.backblaze.com/cloud-storage/pricing, read 2026-10-04). |
 | D | Yes in principle, since LiteFS replicates the SQLite file at page level. I did not verify that triggers are untouched. Treat as "yes, unverified". | LiteFS replicates between nodes. Its own docs say to keep regular off-site backups, so it does not replace one. Source: https://docs.fly.io/litefs, read 2026-10-04. | $0 for the software. The page says it is pre-1.0 and that the vendor cannot give support. Source: https://docs.fly.io/litefs, read 2026-10-04. Off-site backup is still needed, so the real cost is C's cost plus more work. |
@@ -77,7 +77,7 @@ One limit to state plainly. The triggers stop a normal UPDATE or DELETE. They do
 
 ### Where the Notion data goes
 
-Notion databases MERO uses today, by name, and what replaces each. The sources are the vault's rules file and its knowledge export script, which name Tasks, Sprints and the Knowledge Vault. Those files say MERO has four databases but name three directly. I took Projects as the fourth because the workspace rules refer to each project's Next action. Confirm that with the owner.
+The four Notion databases are Tasks, Sprints, Projects and the Knowledge Vault, confirmed from the relations on the Tasks database. Each is mapped below.
 
 | Notion database today | Replacement after migration | Status in `mero/vocab.py` (20b1ab3) |
 |---|---|---|
@@ -127,6 +127,7 @@ A SQLite file opens in every language and is a documented, stable format. To mov
 All read 2026-10-04.
 
 - SQLite, VACUUM INTO: https://www.sqlite.org/lang_vacuum.html
+- SQLite, copyright and license: https://www.sqlite.org/copyright.html
 - SQLite, online backup API: https://www.sqlite.org/backup.html
 - Litestream overview: https://litestream.io/
 - Litestream, how it works: https://litestream.io/how-it-works/
