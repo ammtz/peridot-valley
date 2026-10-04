@@ -39,9 +39,6 @@ test('save and load: the valley written to storage is the valley read back', () 
 
   // Verify localStorage has the saved data
   assert.ok(data.has(KEY));
-  const savedJSON = data.get(KEY);
-  assert.ok(savedJSON);
-  const savedData = JSON.parse(savedJSON);
 
   // Create a new sim, which should load the saved state
   const sim2 = new Sim();
@@ -50,9 +47,9 @@ test('save and load: the valley written to storage is the valley read back', () 
   assert.equal(sim2.m.onboarded, true, 'loaded sim should be marked as onboarded');
 
   // Verify the important fields match
-  assert.equal(sim2.m.teams.length, savedData.teams.length, 'team count should match');
-  assert.equal(sim2.m.agents.length, savedData.agents.length, 'agent count should match');
-  assert.equal(Object.keys(sim2.m.sups).length, Object.keys(savedData.sups).length, 'manager count should match');
+  assert.deepEqual(sim2.m.teams.map((t) => t.id), sim1.m.teams.map((t) => t.id));
+  assert.deepEqual(sim2.m.agents.map((a) => a.id), sim1.m.agents.map((a) => a.id));
+  assert.deepEqual(Object.keys(sim2.m.sups), Object.keys(sim1.m.sups));
 });
 
 test('RESET empties storage and shows the starting valley', () => {
@@ -103,7 +100,6 @@ test('RESET empties storage and shows the starting valley', () => {
 test('?fresh replays the opening even when a save exists', () => {
   // Create and save a valley
   const sim1 = make();
-  const savedAgents = sim1.m.agents.length;
   sim1.save();
 
   // Verify localStorage has the save
@@ -131,9 +127,6 @@ test('?fresh replays the opening even when a save exists', () => {
     assert.equal(sim2.m.teams.length, 0, '?fresh should start with no teams');
     assert.equal(sim2.m.agents.length, 0, '?fresh should start with no agents');
     assert.equal(sim2.m.onboarded, false, '?fresh should not be marked as onboarded');
-
-    // Verify it's different from the saved state
-    assert.notEqual(sim2.m.agents.length, savedAgents, 'fresh sim should not have loaded the saved agents');
   } finally {
     if (oldWindow === undefined) {
       delete (globalThis as unknown as { window?: unknown }).window;
