@@ -134,7 +134,7 @@ How each reader reaches each file kind:
 - The laptop worker needs no shared disk. This is the reason the API is the only writer of the SQLite file.
 - It matches today's shape: MERO already keeps blueprints and bench results in git. The only parts that move are the event log and its data, which go from the PC to `data/`.
 
-Risk: a private repo on a free plan has no audit of who pushed. For one person this is fine. Plain-text results must not hold secrets, because the repo is a backup that lasts.
+Risk: the git remote backs up tracked files only, so the SQLite log's safety rests entirely on P18's backup. Plain-text results must hold no secrets, because the repo keeps them in history.
 
 ## Swap-out path
 
@@ -142,7 +142,7 @@ To move to Option B: create `/srv/mero/content/`, run `git mv` for `specs/`, `bl
 
 To move to another remote (GitLab, Codeberg or a bare repo on a second machine): run `git remote set-url origin <new-url>` and push all branches and tags. Check that the new remote has the same commits (`git log -1` on both). Then delete the old remote. No file in the folder changes.
 
-To move the event log: stop the API, copy `data/events.sqlite` with the SQLite backup command (not a plain file copy while it is open), start the API on the new path. The tracked files are not touched. The backup method is P18.
+To move the event log: stop the API, then copy `data/events.sqlite` with its `-wal` and `-shm` files (or use the SQLite backup command), and start the API on the new path. Stopping first keeps the single-writer rule simple. The tracked files are not touched. The backup method is P18.
 
 To move the whole folder to a new VPS: clone the repo there, copy `data/` from the latest backup, and point the laptop worker at the new API address.
 
