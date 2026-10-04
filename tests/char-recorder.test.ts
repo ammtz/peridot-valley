@@ -5,7 +5,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { Sim } from '../src/model/sim';
 import { seed } from '../src/model/seed';
-import { KEY, NOW } from '../src/model/constants';
+import { NOW } from '../src/model/constants';
 
 const data = new Map<string, string>();
 Object.defineProperty(globalThis, 'localStorage', {
