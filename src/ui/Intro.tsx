@@ -103,34 +103,39 @@ function PlanFlow({ plan, askFirst }: { plan: TeamPlan; askFirst: boolean }) {
   );
 }
 
+function RenamePopup({ sim, cur, initialValue }: { sim: Sim; cur: any; initialValue: string }) {
+  const [text, setText] = useState(initialValue);
+
+  return (
+    <div onClick={(e) => e.stopPropagation()}>
+      <div style={{ marginBottom: 10 }}>Rename {cur.name}:</div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <input
+          autoFocus
+          value={text}
+          maxLength={14}
+          onChange={(e) => {
+            setText(e.target.value.toUpperCase());
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') sim.hireCurrent(text);
+          }}
+          style={inputStyle}
+        />
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button style={primaryBtn} onClick={() => sim.hireCurrent(text)}>HIRE</button>
+        <button style={smallBtn} onClick={() => sim.cancelRename()}>CANCEL</button>
+      </div>
+    </div>
+  );
+}
+
 function HiringCard({ sim }: { sim: Sim }) {
   const cur = sim.currentHire();
   if (!cur) return null;
   if (sim.renaming) {
-    return (
-      <div onClick={(e) => e.stopPropagation()}>
-        <div style={{ marginBottom: 10 }}>Rename {cur.name}:</div>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <input
-            autoFocus
-            value={sim.renameValue}
-            maxLength={14}
-            onChange={(e) => {
-              sim.renameValue = e.target.value.toUpperCase();
-              sim.notify();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') sim.hireCurrent(sim.renameValue);
-            }}
-            style={inputStyle}
-          />
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button style={primaryBtn} onClick={() => sim.hireCurrent(sim.renameValue)}>HIRE</button>
-          <button style={smallBtn} onClick={() => sim.cancelRename()}>CANCEL</button>
-        </div>
-      </div>
-    );
+    return <RenamePopup key={(cur as any).id ?? cur.name} sim={sim} cur={cur} initialValue={sim.renameValue} />;
   }
   return (
     <div onClick={(e) => e.stopPropagation()}>
