@@ -84,12 +84,12 @@ Remote: a private GitLab.com project.
 
 ### Comparison
 
-Cost is the monthly USD cost of the git remote at one person's use. The VPS is common to all three and is priced in P15. For scale, Hetzner's cheapest shared server was about 5.99 EUR a month, and its automated server backup adds 20% of that (about 1.20 EUR) ([source](https://betterstack.com/community/guides/web-servers/hetzner-cloud-review/), read 2026-10-04).
+Cost is the monthly USD cost of the git remote at one person's use. The VPS is common to all three and is priced in P15.
 
 | Option | Git remote | Remote cost per month | Solo maintainer | Low ops | Cheap to run | Swappable parts | Fits Python backend and JS frontend |
 |---|---|---|---|---|---|---|---|
 | A: one repo, `data/` ignored | Private GitHub repo | $0 ([GitHub pricing](https://github.com/pricing): Free plan, $0, private repos included; read 2026-10-04) | Strong. One repo, one `git push`, one place to look. | Strong. One ignore file separates code from data. | Strong. $0 remote, no second service. | Medium. Content and data share a repo root, so splitting later means a move. | Strong. Python and JS both read plain paths under one root. |
-| B: plain parent, `content/` repo | Private GitHub repo | $0 (same source) | Medium. Two levels to remember: the parent and the repo. | Strong. The repo cannot hold the database by mistake, but the parent needs its own backup. | Strong. $0 remote. | Strong. `content/` can move to any remote or host without touching `data/`. | Strong. Paths are plain, but every tool needs the `content/` prefix. |
+| B: plain parent, `content/` repo | Private GitHub repo | $0 ([GitHub pricing](https://github.com/pricing): Free plan, $0, private repos included; read 2026-10-04) | Medium. Two levels to remember: the parent and the repo. | Strong. The repo cannot hold the database by mistake, but the parent needs its own backup. | Strong. $0 remote. | Strong. `content/` can move to any remote or host without touching `data/`. | Strong. Paths are plain, but every tool needs the `content/` prefix. |
 | C: one repo, `runs/` ignored | Private GitLab.com project | $0 ([GitLab pricing](https://about.gitlab.com/pricing/): Free, $0 per user, 10 GiB per project; read 2026-10-04) | Strong. One repo. | Medium. A second account and a 5-user, 10 GiB limit to watch. | Strong. $0 remote. | Medium. Same root as A, with the remote already off GitHub. | Strong. Same as A. |
 
 The backup remote costs $0 in every option. A second copy can also go to a free Codeberg repo ([Codeberg terms](https://codeberg.org/Codeberg/org/src/branch/main/TermsOfUse.md), read 2026-10-04: hosting is free, private repos only for small project needs). That copy is optional and not priced above.
@@ -101,8 +101,8 @@ The backup remote costs $0 in every option. A second copy can also go to a free 
 Git ignores these paths:
 
 - `data/` as a whole.
-- `data/events.sqlite` (the SQLite event log). It is one of the ignored paths.
-- `data/events.sqlite-wal`, `data/events.sqlite-shm` and `data/events.sqlite.writer.lock` (SQLite side files and the writer lock).
+- `data/ledger.db` (the SQLite event log). It is one of the ignored paths. The ledger code in MERO defaults to this name, and the path is set with `MERO_DB` or `--db`.
+- `data/ledger.db-wal`, `data/ledger.db-shm` and `data/ledger.db.writer.lock` (SQLite side files and the writer lock).
 - `data/backups/` (SQLite backup copies, made by P36 to P38).
 - `.env` and any file with secrets.
 - `config/local.*` (VPS-only settings).
@@ -115,7 +115,7 @@ How each reader reaches each file kind:
 |---|---|---|
 | Specs, blueprints, config | Reads the working tree on disk. | Pulls from the git remote, or asks the API. It never mounts the VPS disk. |
 | SQLite event log in `data/` | Opens it on the VPS. It is the one writer, and takes the writer lock. | Never opens it. It sends proposed events to the API over HTTPS. The API writes. |
-| Results | The API reads and writes the files in `results/`. | Sends results to the API. The API writes the file, and a commit follows. |
+| Results | The API reads and writes the files in `results/`. | Sends results to the API. The API writes the file. A timer job on the VPS commits and pushes `results/` with a deploy key scoped to that one repo. |
 | Assets | The API serves them from `assets/`. | Pulls from git when it needs one. |
 
 ## Rejected
@@ -138,11 +138,11 @@ Risk: the git remote backs up tracked files only, so the SQLite log's safety res
 
 ## Swap-out path
 
-To move to Option B: create `/srv/mero/content/`, run `git mv` for `specs/`, `blueprints/`, `results/`, `assets/` and `config/` into it, and move the repo's `.git` with them. Leave `data/` where it is. Change the API's base paths with one setting. The remote stays as it is.
+To move to Option B: create `/srv/mero/content/`, run `mkdir content && mv specs blueprints results assets config .gitignore content/ && mv .git content/`, so `git status` stays clean. Leave `data/` where it is. Change the API's base paths with one setting. The remote stays as it is.
 
 To move to another remote (GitLab, Codeberg or a bare repo on a second machine): run `git remote set-url origin <new-url>` and push all branches and tags. Check that the new remote has the same commits (`git log -1` on both). Then delete the old remote. No file in the folder changes.
 
-To move the event log: stop the API, then copy `data/events.sqlite` with its `-wal` and `-shm` files (or use the SQLite backup command), and start the API on the new path. Stopping first keeps the single-writer rule simple. The tracked files are not touched. The backup method is P18.
+To move the event log: stop the API, then copy `data/ledger.db` with its `-wal` and `-shm` files (or use the SQLite backup command), and start the API on the new path. Stopping first keeps the single-writer rule simple. The tracked files are not touched. The backup method is P18.
 
 To move the whole folder to a new VPS: clone the repo there, copy `data/` from the latest backup, and point the laptop worker at the new API address.
 
@@ -153,6 +153,5 @@ All read 2026-10-04.
 - GitHub pricing, Free plan at $0 with private repositories: https://github.com/pricing
 - GitLab pricing, Free tier at $0, 10 GiB per project, 5 users per group: https://about.gitlab.com/pricing/
 - Codeberg terms of use, free hosting and private repo limits: https://codeberg.org/Codeberg/org/src/branch/main/TermsOfUse.md
-- Hetzner Cloud price review, cheapest server about 5.99 EUR a month, backups at 20%: https://betterstack.com/community/guides/web-servers/hetzner-cloud-review/
 - P14 inventory, storage rows (starting layout), in this repo's `docs/architecture/inventory.md` on branch p14-inventory.
 - Today's layout: the MERO repo at commit 20b1ab3 (`blueprints/*.toml`, `models.toml`, `bench/results/`) and `vite.config.ts` at 76b0d7d, which reads `events.jsonl` from a path on the PC.
