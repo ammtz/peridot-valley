@@ -66,9 +66,7 @@ test('drag: tool taken away is revoked (unplugged)', () => {
 test('drag: sixth team moved to a manager at cap is refused', () => {
   const s = make();
   // Add teams to otto until it has MAX_TEAMS_PER_MANAGER teams
-  while (s.managerLoad('otto') < MAX_TEAMS_PER_MANAGER) {
-    s.addTeam('otto');
-  }
+  for (let i = 0; i < MAX_TEAMS_PER_MANAGER && s.managerLoad('otto') < MAX_TEAMS_PER_MANAGER; i++) s.addTeam('otto');
   assert.equal(s.managerLoad('otto'), 5);
   // Try to move a team from dash to otto (which is full)
   const jobTeam = s.team('job')!;
