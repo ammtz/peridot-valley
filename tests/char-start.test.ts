@@ -1,6 +1,6 @@
 // Characterization test for the starting valley. Pins what the code does now
 // when entering via the intro questions or the bypass link.
-import { test, beforeEach } from 'node:test';
+import { test, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { Sim } from '../src/model/sim';
 
@@ -28,66 +28,73 @@ if (typeof window === 'undefined') {
 beforeEach(() => data.clear());
 
 test('intro path: answering both questions hires one manager and three helpers', () => {
-  const sim = new Sim();
-  assert.equal(sim.introOn, true, 'intro should be on for fresh sim');
-  assert.equal(sim.introPhase, 'sleep', 'should start in sleep phase');
-  assert.deepEqual(Object.keys(sim.m.sups), ['pip'], 'should start with just VIC');
-  assert.equal(sim.m.agents.length, 0, 'should start with no agents');
-  assert.equal(sim.m.teams.length, 0, 'should start with no teams');
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const sim = new Sim();
+    assert.equal(sim.introOn, true, 'intro should be on for fresh sim');
+    assert.equal(sim.introPhase, 'sleep', 'should start in sleep phase');
+    assert.deepEqual(Object.keys(sim.m.sups), ['pip'], 'should start with just VIC');
+    assert.equal(sim.m.agents.length, 0, 'should start with no agents');
+    assert.equal(sim.m.teams.length, 0, 'should start with no teams');
 
-  // Wake up
-  sim.wake();
-  assert.equal(sim.introPhase, 'greet', 'should move to greet after wake');
+    // Wake up
+    sim.wake();
+    assert.equal(sim.introPhase, 'greet', 'should move to greet after wake');
 
-  // Advance to Q1
-  sim.advanceGreet();
-  assert.equal(sim.introPhase, 'q1', 'should move to q1');
+    // Advance to Q1
+    sim.advanceGreet();
+    assert.equal(sim.introPhase, 'q1', 'should move to q1');
 
-  // Answer Q1: you decide on approvals
-  sim.answerQ1(true);
-  // thinkThen runs async, so we need to wait for it or simulate the callback
-  // For a deterministic test, we'll finish the think manually
-  sim.thinking = false;
-  sim.introPhase = 'q2';
-  assert.deepEqual(sim.vicNotes, ['Approvals: you decide'], 'should record Q1 answer');
+    // Answer Q1: you decide on approvals
+    sim.answerQ1(true);
+    assert.equal(sim.thinking, true, 'should be thinking after answerQ1');
+    mock.timers.tick(60_000);
+    assert.equal(sim.thinking, false, 'should finish thinking after timeout');
+    assert.equal(sim.introPhase, 'q2', 'should move to q2 after timeout');
+    assert.deepEqual(sim.vicNotes, ['Approvals: you decide'], 'should record Q1 answer');
 
-  // Answer Q2: job hunt
-  sim.answerQ2('job');
-  sim.thinking = false;
-  sim.introPhase = 'hiring';
-  assert.deepEqual(sim.vicNotes, ['Approvals: you decide', 'First job: job hunt'], 'should record Q2 answer');
+    // Answer Q2: job hunt
+    sim.answerQ2('job');
+    assert.equal(sim.thinking, true, 'should be thinking after answerQ2');
+    mock.timers.tick(60_000);
+    assert.equal(sim.thinking, false, 'should finish thinking after timeout');
+    assert.equal(sim.introPhase, 'hiring', 'should move to hiring after timeout');
+    assert.deepEqual(sim.vicNotes, ['Approvals: you decide', 'First job: job hunt'], 'should record Q2 answer');
 
-  // Hire the first (single) manager
-  assert.equal(sim.currentHire()?.name, 'DASH', 'should offer DASH for job hunt');
-  sim.hireCurrent();
+    // Hire the first (single) manager
+    assert.equal(sim.currentHire()?.name, 'DASH', 'should offer DASH for job hunt');
+    sim.hireCurrent();
 
-  // Check state after hiring
-  assert.equal(sim.introOn, false, 'intro should be off after hiring');
-  assert.equal(sim.introPhase, null, 'intro phase should be null after hiring');
+    // Check state after hiring
+    assert.equal(sim.introOn, false, 'intro should be off after hiring');
+    assert.equal(sim.introPhase, null, 'intro phase should be null after hiring');
 
-  // Check managers
-  const managerIds = Object.keys(sim.m.sups);
-  assert.equal(managerIds.length, 2, 'should have VIC and one hired manager');
-  assert.ok(managerIds.includes('pip'), 'should have VIC (pip)');
-  assert.ok(managerIds.includes('dash'), 'should have DASH');
-  assert.equal(sim.m.sups.dash.name, 'DASH', 'hired manager should be named DASH');
-  assert.equal(sim.m.sups.dash.role, 'WORK', 'DASH should have role WORK');
+    // Check managers
+    const managerIds = Object.keys(sim.m.sups);
+    assert.equal(managerIds.length, 2, 'should have VIC and one hired manager');
+    assert.ok(managerIds.includes('pip'), 'should have VIC (pip)');
+    assert.ok(managerIds.includes('dash'), 'should have DASH');
+    assert.equal(sim.m.sups.dash.name, 'DASH', 'hired manager should be named DASH');
+    assert.equal(sim.m.sups.dash.role, 'WORK', 'DASH should have role WORK');
 
-  // Check team
-  assert.equal(sim.m.teams.length, 1, 'should have one team after hiring');
-  const team = sim.m.teams[0];
-  assert.equal(team.id, 'job', 'team should be job team');
-  assert.equal(team.name, 'JOB HUNT', 'team name should be JOB HUNT');
-  assert.equal(team.boss, 'dash', 'team boss should be DASH');
+    // Check team
+    assert.equal(sim.m.teams.length, 1, 'should have one team after hiring');
+    const team = sim.m.teams[0];
+    assert.equal(team.id, 'job', 'team should be job team');
+    assert.equal(team.name, 'JOB HUNT', 'team name should be JOB HUNT');
+    assert.equal(team.boss, 'dash', 'team boss should be DASH');
 
-  // Check agents in the team (should be 3 helpers)
-  const jobAgents = sim.m.agents.filter((a) => a.team === 'job');
-  assert.equal(jobAgents.length, 3, 'job team should have 3 helpers');
-  const agentNames = jobAgents.map((a) => a.name).sort();
-  assert.deepEqual(agentNames, ['FIT', 'PEN', 'SCOUT'], 'helpers should be SCOUT, FIT, PEN');
+    // Check agents in the team (should be 3 helpers)
+    const jobAgents = sim.m.agents.filter((a) => a.team === 'job');
+    assert.equal(jobAgents.length, 3, 'job team should have 3 helpers');
+    const agentNames = jobAgents.map((a) => a.name).sort();
+    assert.deepEqual(agentNames, ['FIT', 'PEN', 'SCOUT'], 'helpers should be SCOUT, FIT, PEN');
 
-  // Check state (onboarded is false until save() is called)
-  assert.equal(sim.m.onboarded, false, 'onboarded should be false until save() is called');
+    // Check state (onboarded is false until save() is called)
+    assert.equal(sim.m.onboarded, false, 'onboarded should be false until save() is called');
+  } finally {
+    mock.timers.reset();
+  }
 });
 
 test('bypass path: the bypass link loads full seed with VIC, two managers and four teams', () => {
