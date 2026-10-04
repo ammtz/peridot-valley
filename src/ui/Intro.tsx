@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Sim } from '../model/sim';
-import { helperCount, type TeamPlan } from '../model/presets';
+import { helperCount, type TeamPlan, type PresetManagerSeed } from '../model/presets';
 
 const card: React.CSSProperties = {
   pointerEvents: 'auto',
@@ -103,7 +103,7 @@ function PlanFlow({ plan, askFirst }: { plan: TeamPlan; askFirst: boolean }) {
   );
 }
 
-function RenamePopup({ sim, cur, initialValue }: { sim: Sim; cur: any; initialValue: string }) {
+function RenamePopup({ sim, cur, initialValue }: { sim: Sim; cur: PresetManagerSeed; initialValue: string }) {
   const [text, setText] = useState(initialValue);
 
   return (
@@ -135,7 +135,7 @@ function HiringCard({ sim }: { sim: Sim }) {
   const cur = sim.currentHire();
   if (!cur) return null;
   if (sim.renaming) {
-    return <RenamePopup key={(cur as any).id ?? cur.name} sim={sim} cur={cur} initialValue={sim.renameValue} />;
+    return <RenamePopup key={cur.id} sim={sim} cur={cur} initialValue={sim.renameValue} />;
   }
   return (
     <div onClick={(e) => e.stopPropagation()}>
