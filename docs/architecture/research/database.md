@@ -44,10 +44,10 @@ What each option does on append-only, on backup, and on cost.
 
 | Option | Append-only model carries over unchanged? | Backup without stopping the one writer | Monthly cost at one person's use, source, date read |
 |---|---|---|---|
-| A | Yes. No code or schema change; the two triggers and the writer lock stay as they are. | None built in. A plain file copy of `ledger.db` while the writer runs can miss the WAL and give a broken copy. The only safe manual copy is `sqlite3 ledger.db ".backup copy.db"` or `VACUUM INTO`, run by hand. | $0 added. The VPS is already inside the owner's $5 to $10 budget and is priced in the hosting note. SQLite is public domain, so the software costs $0 (https://www.sqlite.org/copyright.html, read 2026-10-04). The VPS is priced in the hosting note. |
+| A | Yes. No code or schema change; the two triggers and the writer lock stay as they are. | None built in. A plain file copy of `ledger.db` while the writer runs can miss the WAL and give a broken copy. The only safe manual copy is `sqlite3 ledger.db ".backup copy.db"` or `VACUUM INTO`, run by hand. | $0 added. The VPS is already inside the owner's $5 to $10 budget (priced in the hosting note). SQLite is public domain, so the software costs $0 (https://www.sqlite.org/copyright.html, read 2026-10-04). |
 | B | Yes. `VACUUM INTO` writes a new file and leaves the original unchanged. The copy carries the triggers, because the schema is copied with the data. | `VACUUM INTO` is transactional, and the output is a consistent snapshot. Unlike plain `VACUUM`, it works with other connections holding locks. Source: https://www.sqlite.org/lang_vacuum.html, read 2026-10-04. Off-site copy goes to object storage. | $0 added while the copies stay under 10 GB, which Backblaze B2 stores free. Beyond that, B2 is $6.95 per TB per month. Source: https://www.backblaze.com/cloud-storage/pricing, read 2026-10-04. |
 | C | Yes. Litestream copies WAL pages through the SQLite API and does not change the schema, so the triggers are replicated as part of the file. Source for how it works: https://litestream.io/how-it-works/, read 2026-10-04. | Litestream runs as a separate process. It holds a long-running read transaction and does the checkpoints itself, so the app keeps writing. Source: https://litestream.io/how-it-works/, read 2026-10-04. `ledger.py` already uses WAL mode, which Litestream needs. | $0 added for the software. The site says it costs "pennies per day" in object storage (https://litestream.io/, read 2026-10-04). Storage under 10 GB is free on B2, then $6.95 per TB per month (https://www.backblaze.com/cloud-storage/pricing, read 2026-10-04). |
-| D | Yes in principle, since LiteFS replicates the SQLite file at page level. I did not verify that triggers are untouched. Treat as "yes, unverified". | LiteFS replicates between nodes. Its own docs say to keep regular off-site backups, so it does not replace one. Source: https://docs.fly.io/litefs, read 2026-10-04. | $0 for the software. The page says it is pre-1.0 and that the vendor cannot give support. Source: https://docs.fly.io/litefs, read 2026-10-04. Off-site backup is still needed, so the real cost is C's cost plus more work. |
+| D | Yes. LiteFS is a pass-through file system that copies out the page set of each transaction, so the schema and triggers are not altered. Source: https://docs.fly.io/litefs/how-it-works, read 2026-10-04. | LiteFS replicates between nodes. Its own docs say to keep regular off-site backups, so it does not replace one. Source: https://docs.fly.io/litefs, read 2026-10-04. | $0 for the software, which is Apache-2.0 (https://github.com/superfly/litefs/blob/main/LICENSE, read 2026-10-04). The page says it is pre-1.0 and that the vendor cannot give support. Source: https://docs.fly.io/litefs, read 2026-10-04. Off-site backup is still needed, so the real cost is C's cost plus more work. |
 
 The ledger size is small. It is text rows for one person. I did not measure it, so the "under 10 GB" claim is an estimate to check once the VPS holds real data.
 
@@ -62,18 +62,26 @@ litestream restore -o restored.db <replica-url>
 python -m mero --db restored.db replay
 ```
 
-`litestream restore -o PATH REPLICA_URL` is documented at https://litestream.io/reference/restore/ (read 2026-10-04). `python -m mero replay` checks that every event is valid, `seq` is unbroken, and the views folded one at a time equal the views folded at once. It prints `REPLAY REPRODUCES THE LOG` and exits 0 on success, and exits 1 on any problem.
+`litestream restore -o PATH REPLICA_URL` is documented at https://litestream.io/reference/restore/ (read 2026-10-04). `python -m mero replay` checks that every event is valid, each `parent` is an earlier event, and the views folded one at a time equal the views folded at once. It does not check that nothing is missing from the end. For completeness, the restored file's `SELECT count(*) FROM events` and the views digest that replay prints must match the live ledger's at the restore point. It prints `REPLAY REPRODUCES THE LOG` and exits 0 on success, and exits 1 on any problem.
 
-Command that shows an UPDATE or DELETE on the events table is refused, run on the restored copy:
+Commands that show an UPDATE or DELETE on the events table is refused. First a read-only check that lists the triggers. It must print `events_no_update` and `events_no_delete`:
 
 ```
-sqlite3 restored.db "UPDATE events SET kind='note' WHERE seq=1;"
-sqlite3 restored.db "DELETE FROM events WHERE seq=1;"
+sqlite3 -readonly restored.db "SELECT name FROM sqlite_master WHERE type='trigger'"
 ```
 
-Expected output is an error from the triggers quoted above: `the ledger is append-only: no updates` and `the ledger is append-only: no deletes`. This proves the restored file still carries the triggers.
+Then try the writes on a throwaway copy, never on the restored file:
 
-One limit to state plainly. The triggers stop a normal UPDATE or DELETE. They do not stop someone with write access to the file from running `DROP TRIGGER`. The restore check above would catch a missing trigger, because the two statements would then succeed. Run it on every restore.
+```
+cp restored.db probe.db
+sqlite3 probe.db "UPDATE events SET kind='note' WHERE seq=1;"
+sqlite3 probe.db "DELETE FROM events WHERE seq=1;"
+rm probe.db
+```
+
+Expected output is an error from the triggers quoted above: `the ledger is append-only: no updates` and `the ledger is append-only: no deletes`. This proves the restored file still carries the triggers, and `restored.db` is never touched.
+
+One limit to state plainly. The triggers stop a normal UPDATE or DELETE. They do not stop someone with write access to the file from running `DROP TRIGGER`. The trigger listing above would catch a missing trigger, and the probe statements would then succeed. Run it on every restore.
 
 ### Where the Notion data goes
 
@@ -81,10 +89,26 @@ The four Notion databases are Tasks, Sprints, Projects and the Knowledge Vault, 
 
 | Notion database today | Replacement after migration | Status in `mero/vocab.py` (20b1ab3) |
 |---|---|---|
-| Tasks | Events with a `task` id: `task.new`, `task.assign`, `task.state`. The Status values map to the ledger's task states (todo, doing, verify, done, failed, killed). "Waiting on" the owner maps to `approval.ask` and `approval.give`. "Claimed by" maps to the `to` field of `task.assign`. Comments map to `note` events. | Exists. |
+| Tasks | Events with a `task` id. The mapping of each property is in the next table. | Exists, plus one new kind (`task.meta`). |
 | Sprints | New event kinds `sprint.open` and `sprint.close`, folded into a sprints view. Goal, carried over and retro live in the `body`. `run.start` already takes an optional `sprint` field. | New kinds needed. No code change in this note. |
 | Knowledge Vault | New kinds `knowledge.write` and `knowledge.retire`, folded like blueprints are today (`blueprint.write`, `blueprint.retire`). Each row becomes one event; a revision is a new event, never an edit. | New kinds needed. |
 | Projects (each project's Next action) | New kind `project.write` carrying the next action; the latest event per project is the current row. | New kind needed. |
+
+Tasks, property by property. The ledger's task states are todo, doing, verify, done, failed, killed (`mero/vocab.py`, 20b1ab3). A new task starts as todo.
+
+| Notion Tasks property | Ledger |
+|---|---|
+| Status = inbox | `task.new`, then `task.meta` with `stage: inbox`. |
+| Status = todo | `task.new` only. The fold starts it as todo. |
+| Status = doing | `task.new`, then `task.state` doing. |
+| Status = blocked | `task.state` stays at todo or doing. A `task.meta` event with `blocked: <reason>` records the block. The ledger has no blocked state. |
+| Status = done | `task.state` done. |
+| Status = dropped | `task.state` killed, with `reason: dropped`. |
+| Claimed by (for example `claude-code 2026-10-04`) | `task.assign`. Split the text at the first space. The first part, lower-cased, becomes the actor id `l1:<name>`, such as `l1:claude-code`, which fits the actor pattern `role` or `role:name` in `vocab.py`. The owner becomes `you`. The date becomes the event's `at`, set by the migration ingest, which is the one path allowed to supply `at`. |
+| Waiting on | `approval.ask` and `approval.give`. |
+| Type, Due, Where | A new kind `task.meta`. Its `body` holds `type`, `due` and `where`. `task.new` takes only `title`, `estimate_tokens` and `tier`, so these cannot go there. A later change is a new `task.meta` event. |
+| Sprint, Project (relations) | The task's sprint and project ids in `task.meta`. |
+| Comments | `note` events. |
 
 Two points on this mapping. A "latest event wins" fold gives an editable-looking row on top of an append-only table. History stays whole. Nothing here adds a second table; the fold is in `views.py`.
 
@@ -133,6 +157,8 @@ All read 2026-10-04.
 - Litestream, how it works: https://litestream.io/how-it-works/
 - Litestream, restore reference: https://litestream.io/reference/restore/
 - LiteFS overview: https://docs.fly.io/litefs
+- LiteFS, how it works: https://docs.fly.io/litefs/how-it-works
+- LiteFS license (Apache-2.0): https://github.com/superfly/litefs/blob/main/LICENSE
 - Backblaze B2 pricing: https://www.backblaze.com/cloud-storage/pricing
 - Code read: the ledger (`mero/ledger.py`), views (`mero/views.py`), command line (`mero/cli.py`) and vocabulary (`mero/vocab.py`), MERO commit 20b1ab3.
 - Inventory of the database rows: the P14 inventory, branch p14-inventory.
