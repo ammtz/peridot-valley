@@ -44,8 +44,8 @@ Transport, place, dependencies, price and the policy answer, one row each.
 
 | Option | Transport | Runs on | Added dependencies | Monthly cost at one person's use, source, date read | Every call still passes `mero/policy.py` and lands as `tool.call` and `tool.result`? |
 |---|---|---|---|---|---|
-| A | Python function call, no wire | Where the worker runs: VPS or laptop | None | $0. Python is under the PSF license, which is royalty-free. Source: https://docs.python.org/3/license.html, read 2026-10-04. | Yes. The worker already calls `ctx.guard`, which rules first and runs second. Today `tool.call` exists for `run` only (see Functions), so `write` needs the same emit added. |
-| B | stdio. The worker launches each server as a subprocess and talks over stdin and stdout. | Where the worker runs: a VPS worker spawns VPS servers, a laptop worker spawns laptop servers. | The `mcp` package, which needs Python 3.10 or newer. | $0. The Python SDK is MIT licensed. Source: https://github.com/modelcontextprotocol/python-sdk, read 2026-10-04. | Yes. The worker is the MCP client, so it holds the wire. A thin wrapper in the worker calls `guard` before it sends `tools/call`, then emits `tool.call` before and `tool.result` after. The server has no other caller and no ledger link, so it cannot skip the gate. |
+| A | Python function call, no wire | Where the worker runs: VPS or laptop | None | $0. Python is under the PSF license, which is royalty-free. Source: https://docs.python.org/3/license.html, read 2026-10-04. | No. Every call is ruled, because the worker calls `ctx.guard`. But today only `run` emits `tool.call` and `tool.result`, and `write` emits neither (see Functions). It becomes yes once the same emit is added for `write`. |
+| B | stdio. The worker launches each server as a subprocess and talks over stdin and stdout. | Where the worker runs: a VPS worker spawns VPS servers, a laptop worker spawns laptop servers. | The `mcp` package, which needs Python 3.10 or newer. | $0. The Python SDK is MIT licensed. Source: https://github.com/modelcontextprotocol/python-sdk, read 2026-10-04. | Yes. The worker is the MCP client, so it holds the wire. A thin wrapper in the worker emits `tool.call`, calls `ctx.guard(action, fn)` where `fn` sends `tools/call`, then emits `tool.result`. L2 writes the ruling inside the guard. The server has no other caller and no ledger link, so it cannot skip the gate. |
 | C | Streamable HTTP to one endpoint, reached over Tailscale. The server binds `127.0.0.1` and `tailscale serve` exposes it to the tailnet only. | The tool server on the VPS. Laptop and VPS workers are clients. | `mcp`, plus Tailscale on both ends, plus a service unit and some auth. | $0. Tailscale Personal is "$0 Free forever" with unlimited user devices. Source: https://tailscale.com/pricing, read 2026-10-04. | No, not by itself. Any tailnet device that can reach the endpoint can call a tool with no ruling. It becomes yes only if every worker also goes through the wrapper from B and the endpoint demands auth (P23). |
 | D | stdio or Streamable HTTP in front, any transport behind. | The gateway on the VPS. Servers behind it on the VPS or laptop. | `fastmcp` plus `mcp`, plus the C pieces if any server sits across the tailnet. | $0. FastMCP is Apache-2.0. Source: https://github.com/jlowin/fastmcp, read 2026-10-04. | No, not by itself. A gateway namespaces tools and merges servers. It knows nothing of MERO's rulings or ledger. The gate would have to be written inside it, in a process that does not hold the L2 writer. |
 
@@ -66,7 +66,7 @@ Three servers carry everything. The names are proposals. None exists yet. Each r
 | `grep` | read, allow | `mero-fs` | Worker's machine |
 | `glob` | read, allow | `mero-fs` | Worker's machine |
 | `stat` | read, allow | `mero-fs` | Worker's machine |
-| `write` (worker's SEARCH/REPLACE result, supervisor's patch save) | write, ask with the diff | `mero-fs` | Worker's machine, inside its worktree |
+| `write` (the worker's SEARCH/REPLACE result) | write, ask with the diff | `mero-fs` | Worker's machine, inside its worktree |
 | `edit` | write, ask with the diff | `mero-fs` | Worker's machine, inside its worktree |
 | `mkdir` | write, ask with the diff | `mero-fs` | Worker's machine, inside its worktree |
 | `delete` | destructive, deny | `mero-fs` | Worker's machine. Registered so the call is ruled and logged. A deny means the server code never runs. |
@@ -74,8 +74,10 @@ Three servers carry everything. The names are proposals. None exists yet. Each r
 | `move` | destructive, deny | `mero-fs` | Same as `delete` |
 | `fetch` | network, ask | `mero-net` | Worker's machine |
 | `http` | network, ask | `mero-net` | Worker's machine |
-| `run` with `cmd` a list (worker's verify commands, supervisor's `git merge`, git, `rg`, `ls`, the rest of the program sets) | by program: read allow, write ask, network ask, destructive deny, unknown deny (shells and interpreters) | `mero-run` | Worker's machine, inside its worktree. Started from a list, with no shell. |
+| `run` with `cmd` a list (the worker's verify commands, git, `rg`, `ls`, the rest of the program sets) | by program: read allow, write ask, network ask, destructive deny, unknown deny (shells and interpreters) | `mero-run` | Worker's machine, inside its worktree. Started from a list, with no shell. |
 | Any name not in the rows above (unknown) | unknown, deny | None, on purpose | Never reaches a server. The gate denies it and logs `policy.rule`. |
+
+L2's own actions stay in-process behind `Supervisor.act`: its patch save (`write`) and its `git merge` (`run`). They use the same two tool names, so they add no tool. L2 does not spawn a worker-side server for them.
 
 14 tools mapped, 0 unmapped. Count: `mero-fs` 11, `mero-net` 2, `mero-run` 1. The last row is the rule for names that do not exist, not a tool.
 
@@ -91,10 +93,11 @@ tools = ["read", "grep", "edit", "run"]
 
 The worker becomes the MCP client. It spawns `mero-fs`, `mero-net` and `mero-run` as subprocesses, only the ones its spec names. A wrapper in the worker does this for every call:
 
-1. `gate(...)` on the tool and its args (`mero/policy.py`). This writes `policy.rule` and, for an ask, `approval.ask`.
-2. Emit `tool.call`.
-3. If cleared, send `tools/call` to the server. If not, send nothing.
-4. Emit `tool.result` and the `policy.effect` with the exit code.
+1. Emit `tool.call`.
+2. Call `ctx.guard(action, fn)`, where `fn` sends `tools/call` to the server. `ctx.guard` is the closure that `Supervisor.guard(by, task_id, task, worktree)` returns in `mero/supervisor.py`. Its signature is `guard(action: Action, fn)`. It runs `Supervisor.act`, so L2 does the ruling.
+3. Emit `tool.result`.
+
+Ruling stays with L2. Inside the guard, L2 writes `policy.rule`, `approval.ask` (for an ask) and `policy.effect`. If the ruling is not cleared, `fn` never runs, so nothing is sent to the server, and the guard raises `PermissionError`.
 
 The servers hold no ledger and no policy. They do their one job and exit when the worker closes stdin. Each server still checks its own inputs. `mero-run` starts programs from a list with no shell. `mero-fs` refuses any path outside `--root`, the worker's worktree.
 
