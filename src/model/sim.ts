@@ -1,11 +1,40 @@
 import type { Agent, FeedCard, Furniture, Manager, Mood, Need, NodeKind, Sel, Settings, Team, WorldModel } from './types';
-import { BLOCKERS, CURRENT_V, DOCK_TIP, FEARS, FR, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic, plural } from './constants';
+import { CURRENT_V, MAX_TEAMS_PER_MANAGER, uid, DOCK_TIP, DOCK_KINDS, FR, FACILITY_RULES, FT, KEY, MGR_NAMES, MOOD, NOW, REC_DEMO_SECS, REC_LABELS, cap, cl, inOutCubic, inOutSine, lerp, outBack, outCubic, plural } from './constants';
+import { TOUR_STEPS } from './tour';
+import { routeWire } from '../lib/route';
+import { insideAny, legalSpot, type Rect } from '../lib/place';
+import { EventStream, MeetingDriver, connectDrive, cycleMessage, detectSampleDrive, foldChamber, foldMeeting, pullDrive, whatFor, wouldCycle, type ChamberView, type MeetingView, type Purpose } from './facility';
+import { chamberRV, driveRV, meetingRV, facilityPanel, walkersFor, teamColor, cablePts } from './facilityView';
 import { blank, desks, roomH, roomW, seed } from './seed';
 
 const MAX_HELPERS = 6;
+const CELEBRATE_SECS = 3.6;
+/** Who produced a feed card: "— TEAM BETA · SCOUT". The team is the last step of the card's path. */
+function signature(c: FeedCard): string {
+  const team = (c.path || '').split(' › ').pop() || '';
+  const who = (c.who || '').trim();
+  const parts = [team, who].filter(Boolean);
+  return parts.length ? '— ' + parts.join(' · ') : '';
+}
+/** Building takes time, like it does in real life. Inside a team's quarters it is just a folder; a shared
+ *  facility needs an API between teams, so it takes about twice as long and grows with each team it serves. */
+const BUILD_SECS_TEAM = 3.2;
+const BUILD_SECS_SHARED = 6;
+const BUILD_SECS_PER_EXTRA_TEAM = 1.2;
+const ACK_SECS = 1.4;
+const SLOTS = 4;
 const HELPER_NAMES = ['ACE', 'BEA', 'CAL', 'DOT', 'ELI', 'FAY', 'GUS', 'HAL', 'IRIS', 'JAX', 'KAI', 'LOU', 'MAE', 'NED', 'OLA', 'PIX', 'QUIN', 'ROO'];
+import { fearFor, nextTeamName, stuckCaseFor, TASK_POOL_GENERIC } from './scenarios';
 import { genericAgents, genericTeamPool, helperCount, pickPreset, Q2_OPTIONS, type PresetManagerSeed } from './presets';
 import { decide, type DecideState } from './decider';
+import { jobName, tally, tickerText, type MeroEvent } from '../live/events';
+import { actorOf, addCost, askText, creatureName, creatureRole, holderOf, jobsPart, meroAction, meroTickerText, NO_COST, roleOf, type Holder, type MeroAction, type MeroCost } from '../live/mero';
+
+/** M8: the teams real creatures live on. */
+const LIVE_TEAMS = {
+  jobs: { id: 'live-jobs', name: 'LAPTOP JOBS', joined: 'LAPTOP JOBS joined. These helpers are real: each one is a scheduled job on this laptop.' },
+  mero: { id: 'live-mero', name: 'MERO', joined: "MERO joined. These helpers are real: each one is an agent in MERO's ledger (VIC, JEV, L2, the workers)." },
+} as const;
 
 type DragKind = 'pan' | 'team' | 'sup' | 'furn' | 'agent' | 'newfurn' | 'ghost';
 
@@ -18,6 +47,8 @@ interface DragState {
   ox: number;
   oy: number;
   moved: boolean;
+  /** View mode: a press on a node selects it, but dragging it pans the valley instead. */
+  view?: boolean;
 }
 
 interface DragPos {
@@ -90,6 +121,19 @@ export class Sim {
   showAddSheetToolsTip = false;
   showAddSheetRecorderTip = false;
   evLog: { t: number; team: string; kind: 'done' | 'stuck' | 'fear'; who?: string; text?: string }[] = [];
+  /** M8: real events seen so far (capped), and the title-bar line built from them. Null until a live source connects. */
+  liveEvents: MeroEvent[] = [];
+  liveTicker: string | null = null;
+  /** MERO's moods by ledger actor, from /views. Not saved: they belong to the source, refreshed every poll. */
+  liveMoods: Record<string, Mood> = {};
+  /** Sum of every real model.call seen (cost_usd, tokens, calls). */
+  liveCost: MeroCost = NO_COST;
+  /** True once any event came from `mero serve` (it carries an actor). */
+  liveMero = false;
+  private liveActors = new Set<string>();
+  private liveOpenAsks = new Set<number>();
+  /** approval.ask seq -> the creature that asked. */
+  private liveAskBy = new Map<number, string>();
   pan = { x: 0, y: 0 };
   zoom = 1;
   sel: Sel | null = null;
@@ -118,10 +162,31 @@ export class Sim {
   renderTicks = 0;
   /** U15/T6: prefers-reduced-motion -- speech shows instantly, bob/pulse/aura stop. */
   reducedMotion = false;
+  /** Agent id -> when its unblock celebration began (seconds, NOW()). Not saved. */
+  celebrating: Record<string, number> = {};
+  /** Id of the shared item being wired right now, or null. */
+  wiring: string | null = null;
+  /** Builder mode: everything that edits the valley (rename, hire, add, drag to re-org, place, wire, delete). Off by default. */
+  builder = false;
+  /** Agent id -> when it acknowledges a freshly built facility. Not saved. */
+  acking: Record<string, number> = {};
   /** Set by renderVals() when anything is animating this frame; start() then redraws every frame. */
   motion = false;
   /** FIX1: true once layoutPhoneColumn() has reflowed the org into a scrollable column. */
   phoneColumnLayout = false;
+  /** Round 3: the scripted event stream. Chamber and meeting state are folded from it, never set. */
+  stream = new EventStream();
+  meetingDriver = new MeetingDriver(this.stream);
+  /** A short message at the top of the screen. Not saved. */
+  toastText = '';
+  toastUntil = 0;
+  /** Chamber the dragged team banner is over. */
+  hoverChamber: string | null = null;
+  /** Transient panel lines keyed by facility id (the detect note, a refused agenda edit). Not saved. */
+  notes: Record<string, string> = {};
+  private foldCache = new Map<string, { v: number; view: ChamberView | MeetingView }>();
+  private sealCache: { key: string; map: Map<string, string> } = { key: '', map: new Map() };
+  private synced = new Set<string>();
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -272,14 +337,14 @@ export class Sim {
     mgr.teams.forEach((ts, j) => {
       const tx = mx + (j - (mgr.teams.length - 1) / 2) * 180,
         ty = my + 230;
-      m.teams.push({ id: ts.id, name: ts.name, boss: mgr.id, x: tx, y: ty, state: 'active', pool: ts.pool.slice(), pi: 0, born: t + j * 0.35 });
+      m.teams.push({ id: ts.id, name: ts.name, boss: mgr.id, x: tx, y: ty, state: 'active', pool: ts.pool.slice(), pi: 3, born: t + j * 0.35 });
       ts.agents.forEach((a) => {
         const extra = { ...(a.extra || {}) };
         delete extra.blocked;
         m.agents.push({ id: ts.id + '-' + a.n.toLowerCase(), name: a.n, role: a.role, team: ts.id, doing: a.doing, backlog: a.backlog.slice(), done: a.done.slice(), blocked: null, fear: null, ...extra });
       });
       if (first && j === 0 && this.pendingContext) {
-        m.furn.push({ id: 'ctx' + Date.now().toString(36), type: 'books', x: tx + 90, y: ty + 30, on: [true, false, false, false, false], born: t + 0.4 });
+        m.furn.push({ id: uid('ctx'), type: 'books', x: tx + 90, y: ty + 30, on: [true, false, false, false, false], born: t + 0.4 });
         this.pendingContext = false;
       }
     });
@@ -316,10 +381,9 @@ export class Sim {
   }
   private afterHireStep() {
     if (this.hireIndex >= this.hireQueue.length) {
-      this.introPhase = 'addteam';
-      this.addTeamCount = 0;
-      this.addTeamValue = '';
-      this.setSpeech("Anything else you'd like a team for?");
+      // No "anything else?" question: new users get the valley and play with the UI.
+      this.finishHiring();
+      return;
     } else {
       const nx = this.currentHire()!;
       this.setSpeech(nx.name + ' would run ' + nx.runs + ' — ' + plural(nx.teams.length, 'team') + ', ' + plural(helperCount(nx), 'helper'));
@@ -342,7 +406,7 @@ export class Sim {
     if (!name.trim() || this.addTeamCount >= 3) return;
     const m = this.m,
       pip = m.sups.pip,
-      id = 'ct' + Date.now().toString(36),
+      id = uid('ct'),
       t = NOW();
     const tx = pip.x + (Math.random() - 0.5) * 300,
       ty = pip.y + 320 + this.addTeamCount * 10;
@@ -371,7 +435,7 @@ export class Sim {
     this.tourStepStart = NOW();
     this.tourWaiting = false;
     this.fitView(this.tourBottomInset(), 1.15);
-    this.setSpeech('Everyone reports up to me. When work is finished, it travels these lines and I tell you.');
+    this.setSpeech(TOUR_STEPS[0].text(typeof window !== 'undefined' && window.innerWidth < 560));
     this.forceCompletionForTour();
     this.notify();
   }
@@ -396,15 +460,17 @@ export class Sim {
   }
   tourNext() {
     if (!this.tourCanNext()) return;
-    if (this.tourStep === 0) {
-      this.tourStep = 1;
-      this.tourStepStart = NOW();
-      this.setSpeech('Colour shows how each helper is doing, and red means stuck. One is stuck now; tap it to step in.');
-      this.forceBlockForTour();
-    } else if (this.tourStep === 1) {
+    const next = this.tourStep + 1;
+    if (next >= TOUR_STEPS.length) {
       this.tourEnd();
       return;
     }
+    this.tourStep = next;
+    this.tourStepStart = NOW();
+    const phone = typeof window !== 'undefined' && window.innerWidth < 560;
+    this.setSpeech(TOUR_STEPS[next].text(phone));
+    if (TOUR_STEPS[next].id === 'fix') this.forceBlockForTour();
+    else if (next > 1) this.fitView(this.tourBottomInset(), 1.15);
     this.notify();
   }
   tourAdvanceAfterFix() {
@@ -415,7 +481,8 @@ export class Sim {
     this.tourStep = 0;
     this.m.onboarded = true;
     const phone = typeof window !== 'undefined' && window.innerWidth < 560;
-    this.setSpeech(phone ? "It's yours now. Tap + to add teams; I'll be up here." : "It's yours now. Hire more from the dock; I'll be up here.");
+    this.builder = false;
+    this.setSpeech(phone ? "It's yours now. Tap + for tools, and turn on Builder mode to edit." : "It's yours now. Press B for Builder mode when you want to add or change things; I'll be up here.");
     this.dirty = true;
     // Phone: the tour left the camera framed on its last stop. Refit so nothing
     // sits clipped at the screen edge once the chrome (dock, feed) settles back in.
@@ -493,6 +560,18 @@ export class Sim {
     try {
       const s = JSON.parse(localStorage.getItem(KEY) || 'null');
       if (!s || (s.v !== 3 && s.v !== CURRENT_V)) return null;
+      // Every manager must reach VIC. A cycle in a hand-edited or corrupted save would
+      // otherwise make the org chart walk forever.
+      const sups = s.sups as Record<string, Manager>;
+      const reachesTop = (id: string) => {
+        let k: string | null = id;
+        for (let i = 0; k && i < 50; i++) {
+          if (k === 'pip') return true;
+          k = sups[k] ? sups[k].boss : null;
+        }
+        return false;
+      };
+      if (!sups.pip || !Object.keys(sups).every(reachesTop)) return null;
       this.migrate(s);
       s.teams.forEach((T: Team) => {
         T.born = null;
@@ -503,9 +582,15 @@ export class Sim {
         S.recv = null;
       });
       s.furn = (s.furn || []).filter((f: Furniture) => (f.type as string) !== 'board');
+      // Round 3: drives and the sealed state live only in the event stream, which starts empty.
+      s.furn = s.furn.filter((f: Furniture) => f.type !== 'drive');
       s.furn.forEach((f: Furniture) => {
+        if (f.type === 'chamber') f.link = null;
         f.born = null;
+        f.build = null;
         f.lastRecapT = null;
+        // Saves from before wires: connect what the old radius used to reach, once.
+        if (!f.wires && !f.owner) f.wires = (s.teams as Team[]).filter((T) => T.state !== 'hidden' && Math.hypot(f.x - T.x, f.y - T.y) < FR).map((T) => T.id);
       });
       s.agents.forEach((a: Agent) => {
         a.flowUntil = 0;
@@ -515,6 +600,20 @@ export class Sim {
     } catch {
       return null;
     }
+  }
+  /** Autosave from the frame loop: serialize in idle time, not inside a frame. */
+  saveIdle() {
+    this.dirty = false;
+    this.lastSave = NOW();
+    const write = () => {
+      try {
+        localStorage.setItem(KEY, JSON.stringify(this.m));
+      } catch {
+        /* ignore quota / privacy errors */
+      }
+    };
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(write, { timeout: 2000 });
+    else setTimeout(write, 0);
   }
   save() {
     try {
@@ -539,7 +638,11 @@ export class Sim {
       this.step();
       const t = NOW();
       const dueForHeartbeat = t - lastHeartbeat >= HEARTBEAT;
-      if (this.motion || this.dirty || this.drag || this.pulses.length > 0 || dueForHeartbeat) {
+      // Lag fix (2026-10-03): bobbing, blinking, auras and sparkles are all functions of the clock,
+      // so with nobody walking `motion` was false and the whole valley dropped to the 4 Hz heartbeat,
+      // then jumped back to 60 Hz when a helper moved or a pulse fired. Ambient animation now draws
+      // on every frame; only reduced-motion users (no ambient motion) keep the cheap heartbeat.
+      if (!this.reducedMotion || this.motion || this.dirty || this.drag || this.pulses.length > 0 || dueForHeartbeat) {
         if (dueForHeartbeat) lastHeartbeat = t;
         this.renderTicks++;
         this.notify();
@@ -568,8 +671,9 @@ export class Sim {
   }
   chain(bossId: string | null): string[] {
     const out: string[] = [];
-    let k = bossId;
-    while (k && k !== 'pip' && this.m.sups[k]) {
+    let k = bossId,
+      guard = 0;
+    while (k && k !== 'pip' && this.m.sups[k] && guard++ < 50) {
       out.unshift(this.m.sups[k].name);
       k = this.m.sups[k].boss;
     }
@@ -804,11 +908,11 @@ export class Sim {
       ox = p.x;
       oy = p.y;
     }
-    this.drag = { kind, id, sx: e.clientX, sy: e.clientY, ox, oy, moved: false };
+    this.drag = { kind, id, sx: e.clientX, sy: e.clientY, ox, oy, moved: false, view: !this.builder && kind !== 'ghost' };
   }
   dockDown(e: React.PointerEvent, type: Furniture['type']) {
     e.stopPropagation();
-    if (e.button > 0) return;
+    if (e.button > 0 || !this.builder) return;
     this.drag = { kind: 'newfurn', type, sx: e.clientX, sy: e.clientY, ox: 0, oy: 0, moved: false };
     this.mouse = { x: e.clientX, y: e.clientY };
   }
@@ -850,6 +954,12 @@ export class Sim {
       dy = e.clientY - D.sy;
     if (!D.moved && Math.hypot(dx, dy) > 4) D.moved = true;
     if (!D.moved) return;
+    if (D.view) {
+      D.kind = 'pan';
+      D.view = false;
+      D.ox = this.pan.x;
+      D.oy = this.pan.y;
+    }
     const z = this.zoom,
       w = this.toWorld(e.clientX, e.clientY);
     if (D.kind === 'pan') this.pan = { x: D.ox + dx, y: D.oy + dy };
@@ -857,7 +967,8 @@ export class Sim {
       const T = this.team(D.id!)!;
       T.x = D.ox + dx / z;
       T.y = D.oy + dy / z;
-      this.hoverMgr = this.mgrAt(w.x, w.y, D);
+      this.hoverChamber = this.chamberAtPoint(w.x, w.y);
+      this.hoverMgr = this.hoverChamber ? null : this.mgrAt(w.x, w.y, D);
     } else if (D.kind === 'sup') {
       const s = this.m.sups[D.id!];
       s.x = D.ox + dx / z;
@@ -911,9 +1022,14 @@ export class Sim {
       }
       if (w) this.placeFurn(D.type!, w.x, w.y);
     } else if (!D.moved) {
-      if (D.kind === 'pan') this.sel = null;
+      if (D.kind === 'pan') {
+        this.sel = null;
+        this.wiring = null;
+      }
       else if (D.kind === 'ghost') this.select({ kind: 'sup', id: 'pip' });
-      else this.select({ kind: D.kind as NodeKind, id: D.id! });
+      else if (D.kind === 'furn' && this.wiring && this.furnById(D.id!)?.type === 'drive' && this.cableTo(D.id!)) {
+        /* the data cable: handled */
+      } else this.select({ kind: D.kind as NodeKind, id: D.id! });
     } else {
       if (D.kind === 'agent') {
         const a = this.agent(D.id!)!;
@@ -929,6 +1045,11 @@ export class Sim {
           const T2 = this.team(a.team)!;
           this.disp[a.id] = { team: T2.id, x: this.dragPos.x - T2.x, y: this.dragPos.y - T2.y };
         }
+      } else if (D.kind === 'team' && this.hoverChamber) {
+        const T = this.team(D.id!)!;
+        T.x = D.ox;
+        T.y = D.oy;
+        this.moveIn(D.id!, this.hoverChamber);
       } else if ((D.kind === 'team' || D.kind === 'sup') && this.hoverMgr) {
         const target = this.hoverMgr;
         if (D.kind === 'team') {
@@ -942,12 +1063,15 @@ export class Sim {
         }
         this.reparent(D.kind, D.id!, target);
       } else if (D.kind === 'furn') {
-        this.announceFurn(this.furnById(D.id!));
+        const moved = this.furnById(D.id!);
+        if (moved) this.settleFurn(moved);
+        this.announceFurn(moved);
       }
       this.dirty = true;
     }
     this.hover = null;
     this.hoverMgr = null;
+    this.hoverChamber = null;
     this.dragPos = null;
     this.notify();
   }
@@ -963,7 +1087,177 @@ export class Sim {
   }
 
   inRange(F: Furniture) {
-    return this.m.teams.filter((T) => T.state !== 'hidden' && Math.hypot(F.x - T.x, F.y - T.y) < FR);
+    // Still being built: serves nobody yet.
+    if (F.build || F.type === 'chamber' || F.type === 'drive') return [];
+    // Inside a team's quarters it lives in that team's folder and serves that team only.
+    if (F.owner) {
+      const own = this.team(F.owner);
+      return own && own.state !== 'hidden' ? [own] : [];
+    }
+    // Shared: access follows wires, never distance.
+    const w = F.wires || [];
+    // A team sealed in a chamber is cut off: it reaches nothing outside.
+    const sealed = this.sealedMap();
+    return this.m.teams.filter((T) => T.state !== 'hidden' && w.includes(T.id) && !sealed.has(T.id));
+  }
+  /** World position and side of a team box's wall plug. Left plug when the item sits left of the team, else right. */
+  plugPoint(T: Team, side: -1 | 1): [number, number] {
+    const w = roomW(this.members(T).length);
+    return [T.x + side * (w / 2 + 3), T.y];
+  }
+  /** Start wiring: the next plug you click connects (or, if already wired, unplugs) this item. */
+  toggleBuilder(on?: boolean) {
+    this.builder = on ?? !this.builder;
+    if (!this.builder) {
+      this.wiring = null;
+      if (this.drag && this.drag.kind !== 'pan') this.drag = null;
+    }
+    this.notify();
+  }
+  startWiring(id: string) {
+    const F = this.furnById(id);
+    if (!this.builder || !F || F.owner || F.build || F.type === 'drive') return;
+    this.wiring = this.wiring === id ? null : id;
+    this.sel = null;
+    this.notify();
+  }
+  cancelWiring() {
+    if (this.wiring) {
+      this.wiring = null;
+      this.notify();
+    }
+  }
+  plugClick(teamId: string) {
+    const F = this.wiring ? this.furnById(this.wiring) : null;
+    const T = this.team(teamId);
+    if (!F || !T || F.type === 'chamber') return;
+    if (this.sealedMap().has(teamId) && !(F.wires || []).includes(teamId)) {
+      this.toast(T.name + ' is sealed in a chamber. Move it out first.');
+      return;
+    }
+    F.wires = F.wires || [];
+    if (F.wires.includes(teamId)) {
+      this.unplug(F.id, teamId);
+    } else {
+      F.wires.push(teamId);
+      this.card('EQUIP', FT[F.type].name, '', FT[F.type].name + ' is wired to ' + T.name + '. Agents there have a path to it now.');
+    }
+    if (F.type === 'meeting') this.syncMeeting(F);
+    // Stay in wiring mode so several teams can be connected in a row; Esc or a click elsewhere ends it.
+    this.dirty = true;
+    this.notify();
+  }
+  unplug(furnId: string, teamId: string) {
+    const F = this.furnById(furnId);
+    if (!F || !F.wires) return;
+    F.wires = F.wires.filter((x) => x !== teamId);
+    this.card('EQUIP', FT[F.type].name, '', FT[F.type].name + ' was unplugged from ' + (this.team(teamId)?.name || 'a team') + '.');
+    if (F.type === 'meeting') this.syncMeeting(F);
+    this.dirty = true;
+    this.notify();
+  }
+  /** The team whose quarters (the room rectangle) contain this point. */
+  quartersAt(x: number, y: number): Team | null {
+    for (const T of this.m.teams) {
+      if (T.state === 'hidden') continue;
+      const n = this.members(T).length;
+      if (Math.abs(x - T.x) <= roomW(n) / 2 && Math.abs(y - T.y) <= roomH(n) / 2) return T;
+    }
+    return null;
+  }
+  /** World position of a quarters slot: a row along the bottom edge of the floor. */
+  slotPos(T: Team, slot: number) {
+    const n = this.members(T).length,
+      w = roomW(n),
+      h = roomH(n);
+    return { x: T.x - w / 2 + ((slot + 0.5) * w) / SLOTS, y: T.y + h / 2 - 13 };
+  }
+  /** After a drop (new or moved): into quarters means a slot and a team-only build; outside means shared and costlier. */
+  settleFurn(F: Furniture, isNew = false) {
+    const rules = FACILITY_RULES[F.type] || {};
+    const q = this.quartersAt(F.x, F.y);
+    let owner: string | null = null;
+    if (rules.sharedOnly) {
+      // Stands on its own: nudge it to the nearest legal spot outside every team's quarters.
+      const spot = legalSpot(F.x, F.y, this.quarterRects(), rules.pad ?? 0);
+      if (spot.moved) {
+        F.x = spot.x;
+        F.y = spot.y;
+        this.toast(rules.nudgeMsg || FT[F.type].name + ' is always shared, so it went outside the quarters.');
+      }
+    } else if (q) {
+      const taken = new Set(this.m.furn.filter((o) => o.id !== F.id && o.owner === q.id).map((o) => o.slot));
+      let best = -1,
+        bd = 1e9;
+      for (let i = 0; i < SLOTS; i++) {
+        if (taken.has(i)) continue;
+        const sp = this.slotPos(q, i);
+        const d = Math.hypot(sp.x - F.x, sp.y - F.y);
+        if (d < bd) {
+          bd = d;
+          best = i;
+        }
+      }
+      if (best >= 0) {
+        owner = q.id;
+        const sp = this.slotPos(q, best);
+        F.x = sp.x;
+        F.y = sp.y;
+        F.slot = best;
+      } else {
+        // All four slots are taken: step outside, where it becomes a shared facility.
+        F.y = q.y + roomH(this.members(q).length) / 2 + 52;
+        this.card('EQUIP', q.name, '', q.name + '’s quarters are full (4 slots). It went outside as a shared ' + FT[F.type].name.toLowerCase() + '.');
+      }
+    }
+    const changed = (F.owner ?? null) !== owner;
+    F.owner = owner;
+    if (!owner) F.slot = null;
+    if (owner) F.wires = [];
+    else if (!F.wires) F.wires = [];
+    if (F.type === 'drive') F.wires = [];
+    if (F.type !== 'drive' && (isNew || changed)) this.startBuild(F);
+  }
+  startBuild(F: Furniture) {
+    const t = NOW();
+    const reach = F.owner ? 1 : Math.max(1, (F.wires || []).length);
+    const dur = (F.owner ? BUILD_SECS_TEAM : BUILD_SECS_SHARED + (reach - 1) * BUILD_SECS_PER_EXTRA_TEAM) * (FACILITY_RULES[F.type]?.buildScale ?? 1);
+    F.build = { start: t, dur: this.reducedMotion ? Math.min(dur, 1.2) : dur, team: F.owner ?? null };
+    const where = F.owner ? this.team(F.owner)?.name : null;
+    this.card('EQUIP', FT[F.type].name, '', where ? 'A builder is setting up ' + FT[F.type].name.toLowerCase() + ' inside ' + where + '. Team only, quick.' : 'A builder is setting up a shared ' + FT[F.type].name.toLowerCase() + '. Press its + then a team’s plug to wire it.');
+  }
+  /** Builders finish: the facility goes live, and each agent it serves reads the new context. */
+  tickBuilds(t: number) {
+    // Owned things ride along with their team's quarters; an orphaned one becomes shared.
+    this.m.furn.forEach((F) => {
+      if (!F.owner) return;
+      const T = this.team(F.owner);
+      if (!T) {
+        F.owner = null;
+        F.slot = null;
+        return;
+      }
+      if (this.drag && this.drag.kind === 'furn' && this.drag.id === F.id) return;
+      const sp = this.slotPos(T, F.slot ?? 0);
+      F.x = sp.x;
+      F.y = sp.y;
+    });
+    this.m.furn.forEach((F) => {
+      if (!F.build || t - F.build.start < F.build.dur) return;
+      F.build = null;
+      const served = this.inRange(F);
+      let k = 0;
+      served.forEach((T) =>
+        this.members(T).forEach((a) => {
+          this.acking[a.id] = t + k++ * 0.25;
+        }),
+      );
+      this.announceFurn(F);
+      if (F.type === 'meeting') this.syncMeeting(F);
+      const names = served.map((T) => T.name).join(', ');
+      this.card('EQUIP', FT[F.type].name, '', FT[F.type].name + ' is up and running' + (names ? ' for ' + names + '. Every agent there has read it.' : '.'));
+      this.dirty = true;
+    });
   }
   announceFurn(F?: Furniture) {
     if (!F) return;
@@ -973,8 +1267,10 @@ export class Sim {
     F.lastAnn = key;
   }
   placeFurn(type: Furniture['type'], x: number, y: number) {
-    const F: Furniture = { id: 'fx' + Date.now().toString(36), type, x, y, on: FT[type].opts.map((_, i) => i === 0), born: NOW() };
+    const F: Furniture = { id: uid('fx'), type, x, y, on: FT[type].opts.map((_, i) => i === 0), born: NOW() };
     this.m.furn.push(F);
+    this.sealCache.key = '';
+    this.settleFurn(F, true);
     this.announceFurn(F);
     // U3: don't auto-select (and pop open its sheet) over the tour.
     if (!this.tourOn) {
@@ -985,6 +1281,7 @@ export class Sim {
   }
   /** Phone (U2): the "+" sheet taps a tool tile instead of dragging one off a dock. */
   placeFurnFromSheet(type: Furniture['type']) {
+    if (!this.builder) return;
     const vw = window.innerWidth,
       vh = window.innerHeight;
     const w = this.toWorld(vw / 2 + (Math.random() - 0.5) * 70, vh / 2 + (Math.random() - 0.5) * 60);
@@ -1018,10 +1315,29 @@ export class Sim {
     this.phoneMoodOpen = false;
     this.notify();
   }
+  /** How many teams and sub-managers sit directly under a manager. */
+  managerLoad(id: string) {
+    return this.m.teams.filter((T) => T.boss === id).length + Object.values(this.m.sups).filter((o) => o.boss === id).length;
+  }
+  /** VIC (the chief) has no cap; every other manager holds at most MAX_TEAMS_PER_MANAGER. */
+  managerFull(id: string) {
+    return id !== 'pip' && this.managerLoad(id) >= MAX_TEAMS_PER_MANAGER;
+  }
+  private refuseFull(id: string) {
+    const B = this.m.sups[id];
+    if (!B) return;
+    this.card('ORG', B.name, '', B.name + ' already runs ' + MAX_TEAMS_PER_MANAGER + ' teams, the most one manager can handle. Add a sub-manager or move something to another manager.');
+  }
   reparent(kind: 'team' | 'sup', id: string, bossId: string) {
     const m = this.m,
       B = m.sups[bossId];
     if (!B) return;
+    const already = kind === 'team' ? this.team(id)?.boss === bossId : m.sups[id]?.boss === bossId;
+    if (!already && this.managerFull(bossId)) {
+      this.refuseFull(bossId);
+      this.notify();
+      return;
+    }
     if (kind === 'team') {
       const T = this.team(id);
       if (!T || T.boss === bossId) return;
@@ -1049,7 +1365,7 @@ export class Sim {
     const name = HELPER_NAMES.find((n) => !used.has(n)) || 'H' + m.agents.length;
     const task = T.pool.length ? T.pool[T.pi % T.pool.length] : 'Get the lay of the land';
     T.pi++;
-    m.agents.push({ id: teamId + '-' + name.toLowerCase() + Date.now().toString(36).slice(-3), name, role: 'helper', team: teamId, doing: task, backlog: [], done: [], blocked: null, fear: null });
+    m.agents.push({ id: uid(teamId + '-' + name.toLowerCase() + '-'), name, role: 'helper', team: teamId, doing: task, backlog: [], done: [], blocked: null, fear: null });
     this.card('ORG', this.pathName(teamId), '', name + ' joined ' + T.name + ' and picked up: ' + task + '.');
     this.sel = { kind: 'team', id: teamId };
     this.popAt = NOW();
@@ -1059,9 +1375,14 @@ export class Sim {
   addManager(bossId: string) {
     const m = this.m,
       b = m.sups[bossId] || m.sups.pip;
+    if (this.managerFull(b.id)) {
+      this.refuseFull(b.id);
+      this.notify();
+      return;
+    }
     const used = new Set(Object.values(m.sups).map((s) => s.name));
     const name = MGR_NAMES.find((n) => !used.has(n)) || 'MGR' + Object.keys(m.sups).length;
-    const id = 'm' + Date.now().toString(36);
+    const id = uid('m');
     m.sups[id] = { id, name, role: 'NEW BRANCH', x: b.x + (Math.random() - 0.5) * 280, y: b.y + 175, size: 40, boss: b.id, born: NOW() };
     b.recv = NOW();
     this.card('ORG', name, '', name + ' joined as a manager under ' + b.name + '.');
@@ -1073,8 +1394,13 @@ export class Sim {
   addTeam(bossId: string) {
     const m = this.m,
       b = m.sups[bossId] || m.sups.pip;
-    const id = 't' + Date.now().toString(36);
-    m.teams.push({ id, name: 'NEW TEAM', boss: b.id, x: b.x + (Math.random() - 0.5) * 280, y: b.y + 210, state: 'active', pool: ['Review the queue', 'Check in with the lead', 'Tidy up shared notes'], pi: 0, born: NOW() });
+    if (this.managerFull(b.id)) {
+      this.refuseFull(b.id);
+      this.notify();
+      return;
+    }
+    const id = uid('t');
+    m.teams.push({ id, name: nextTeamName(m.teams.map((T) => T.name)), boss: b.id, x: b.x + (Math.random() - 0.5) * 280, y: b.y + 210, state: 'active', pool: TASK_POOL_GENERIC.slice(), pi: 0, born: NOW() });
     this.card('ORG', this.pathName(id), '', 'New team floor under ' + b.name + '. Drag agents in to staff it.');
     this.sel = { kind: 'team', id };
     this.popAt = NOW();
@@ -1106,11 +1432,255 @@ export class Sim {
     this.dirty = true;
     this.notify();
   }
+  // ------------------------------------------------------------ Round 3: chamber and meeting (a preview)
+  toast(text: string) {
+    this.toastText = text;
+    this.toastUntil = NOW() + 3.4;
+    this.notify();
+  }
+  /** Each team's quarters as a rectangle (with room for its banner), for placement rules. */
+  quarterRects(): Rect[] {
+    return this.m.teams
+      .filter((T) => T.state !== 'hidden')
+      .map((T) => {
+        const n = this.members(T).length;
+        return { x0: T.x - roomW(n) / 2, x1: T.x + roomW(n) / 2, y0: T.y - roomH(n) / 2 - 26, y1: T.y + roomH(n) / 2 + 8 };
+      });
+  }
+  /** Would a facility of this kind dropped here break its placement rule? (The ghost goes red.) */
+  illegalAt(type: Furniture['type'], x: number, y: number) {
+    const r = FACILITY_RULES[type];
+    return !!r && !!r.sharedOnly && insideAny(x, y, this.quarterRects(), r.pad ?? 0);
+  }
+  private folded<T extends ChamberView | MeetingView>(key: string, make: () => T): T {
+    const c = this.foldCache.get(key);
+    if (c && c.v === this.stream.version) return c.view as T;
+    const view = make();
+    this.foldCache.set(key, { v: this.stream.version, view });
+    return view;
+  }
+  /** The chamber's state, folded from events. The UI reads this and never writes it. */
+  chamberOf(id: string): ChamberView {
+    return this.folded('c:' + id, () => foldChamber(this.stream.events, id));
+  }
+  meetingOf(id: string): MeetingView {
+    return this.folded('m:' + id, () => foldMeeting(this.stream.events, id));
+  }
+  /** Team id -> the chamber it is sealed in. */
+  sealedMap(): Map<string, string> {
+    const key = this.stream.version * 1000 + this.m.furn.length + ':' + this.m.furn.reduce((n, F) => n + (F.type === 'chamber' && !F.build ? 1 : 0), 0);
+    if (this.sealCache.key === key) return this.sealCache.map;
+    const map = new Map<string, string>();
+    this.m.furn.forEach((F) => {
+      if (F.type !== 'chamber' || F.build) return;
+      this.chamberOf(F.id).teams.forEach((tid) => {
+        if (this.team(tid)) map.set(tid, F.id);
+      });
+    });
+    this.sealCache = { key, map };
+    return map;
+  }
+  /** A sealed team pauses when its drive is pulled. */
+  paused(teamId: string) {
+    const c = this.sealedMap().get(teamId);
+    return !!c && this.chamberOf(c).lamp === 'blink';
+  }
+  chamberAtPoint(x: number, y: number): string | null {
+    for (const F of this.m.furn) if (F.type === 'chamber' && !F.build && Math.abs(x - F.x) < 56 && Math.abs(y - F.y) < 48) return F.id;
+    return null;
+  }
+  moveIn(teamId: string, chamberId: string) {
+    const F = this.furnById(chamberId),
+      T = this.team(teamId);
+    if (!this.builder || !F || F.type !== 'chamber' || !T) return;
+    if (F.build) return this.toast('The chamber is still being built.');
+    if (this.sealedMap().has(teamId)) return this.toast(T.name + ' is already in a chamber.');
+    if (!this.members(T).length) return this.toast(T.name + ' has no agents to move in.');
+    this.stream.emit({ kind: 'chamber.seal', chamber: chamberId, team: teamId }, NOW());
+    this.card('EQUIP', 'CHAMBER', '', T.name + ' moved in and the door closed. Its wires to outside tools are cut.');
+    this.syncAllMeetings();
+    this.notify();
+  }
+  moveOut(teamId: string) {
+    const cid = this.sealedMap().get(teamId);
+    if (!this.builder || !cid) return;
+    this.stream.emit({ kind: 'chamber.seal', chamber: cid, team: teamId, out: true }, NOW());
+    this.card('EQUIP', 'CHAMBER', '', (this.team(teamId)?.name || 'A team') + ' moved out. Its wires work again.');
+    this.syncAllMeetings();
+    this.notify();
+  }
+  /** View mode too. The preview finds no hardware and shows one sample; nothing real is read. */
+  detectDrives(id: string) {
+    const F = this.furnById(id);
+    if (!F || F.type !== 'chamber' || F.build) return;
+    const cur = this.chamberOf(id);
+    this.notes[id] = 'No hardware drives found. Showing a sample.';
+    if (cur.drive && cur.drive.present) {
+      this.notes[id] = 'The sample drive is already here.';
+      return this.notify();
+    }
+    this.m.furn = this.m.furn.filter((x) => !(x.type === 'drive' && x.chamber === id));
+    F.link = null;
+    const d = detectSampleDrive(this.stream, id, NOW());
+    let edge = F.x + 190;
+    this.m.teams.forEach((T) => {
+      if (T.state !== 'hidden') edge = Math.max(edge, T.x + roomW(this.members(T).length) / 2 + 150);
+    });
+    // Below every team, so the data cable runs clear of their boxes.
+    let low = F.y + 6;
+    this.m.teams.forEach((T) => {
+      if (T.state !== 'hidden') low = Math.max(low, T.y + roomH(this.members(T).length) / 2 + 70);
+    });
+    const D: Furniture = { id: d.id, type: 'drive', x: edge, y: low, on: [], born: NOW(), owner: null, wires: [], chamber: id };
+    this.m.furn.push(D);
+    // Keep the new drive on screen.
+    const sx = this.pan.x + D.x * this.zoom,
+      room = (typeof window !== 'undefined' ? window.innerWidth : 1400) - this.feedW() - 90;
+    if (sx > room) this.pan = { x: this.pan.x - (sx - room), y: this.pan.y };
+    this.toast(this.notes[id]);
+    this.dirty = true;
+  }
+  /** The data cable: the chamber's port to the drive. Starting the check is a scripted event, not a flag. */
+  cableTo(driveId: string): boolean {
+    const C = this.wiring ? this.furnById(this.wiring) : null,
+      D = this.furnById(driveId);
+    if (!C || C.type !== 'chamber' || !D || D.type !== 'drive') return false;
+    if (D.chamber !== C.id) {
+      this.toast('That drive was detected for another chamber.');
+      return true;
+    }
+    const v = this.chamberOf(C.id);
+    if (!v.teams.length) {
+      this.toast('Move a team into the chamber first.');
+      return true;
+    }
+    if (!v.drive || !v.drive.present || v.drive.id !== D.id) return true;
+    C.link = D.id;
+    this.wiring = null;
+    connectDrive(this.stream, C.id, v.drive, NOW());
+    this.card('EQUIP', 'CHAMBER', '', 'Data cable run to the sample drive. Checking it now (simulated).');
+    this.dirty = true;
+    this.notify();
+    return true;
+  }
+  /** View mode too: simulate pulling the drive. The lamp blinks red and the sealed team pauses. */
+  pullDriveNow(id: string) {
+    const F = this.furnById(id),
+      v = this.chamberOf(id);
+    if (!F || !v.drive || !v.drive.present) return;
+    pullDrive(this.stream, v.drive.id, NOW());
+    this.m.furn = this.m.furn.filter((x) => x.id !== v.drive!.id);
+    F.link = null;
+    this.notes[id] = 'Drive removed. The team is paused.';
+    this.dirty = true;
+    this.notify();
+  }
+  choosePurpose(id: string, purpose: Purpose) {
+    this.stream.emit({ kind: 'chamber.open', chamber: id, purpose }, NOW());
+    this.notes[id] = '';
+    this.notify();
+  }
+  closeChamber(id: string) {
+    this.stream.emit({ kind: 'chamber.close', chamber: id }, NOW());
+    this.notify();
+  }
+  /** The export gate: the one way data leaves (or enters). It shows what moves and waits for an answer. */
+  gateAsk(id: string) {
+    const v = this.chamberOf(id);
+    const kind = v.purpose === 'import' ? 'data.import' : 'data.export';
+    this.stream.emit({ kind, chamber: id, items: ['sample-report.txt (sample)', 'sample-figures.csv (sample)'], status: 'ask' }, NOW());
+    this.notify();
+  }
+  gateAnswer(id: string, ok: boolean) {
+    const v = this.chamberOf(id);
+    if (!v.gate || v.gate.status !== 'ask') return;
+    this.stream.emit({ kind: v.gate.kind === 'import' ? 'data.import' : 'data.export', chamber: id, items: v.gate.items, status: ok ? 'approved' : 'held' }, NOW());
+    this.notify();
+  }
+  syncAllMeetings() {
+    this.m.furn.forEach((F) => {
+      if (F.type === 'meeting') this.syncMeeting(F);
+    });
+  }
+  /** Keeps a meeting's open teams and agenda rows in step with its wires. Idempotent: it emits only what changed. */
+  syncMeeting(F: Furniture) {
+    if (F.build) return;
+    this.synced.add(F.id);
+    const sealed = this.sealedMap();
+    const teams = (F.wires || []).filter((id) => {
+      const T = this.team(id);
+      return !!T && T.state !== 'hidden' && !sealed.has(id);
+    });
+    const now = NOW();
+    const st = this.meetingOf(F.id);
+    if (st.teams.join() !== teams.join()) this.stream.emit({ kind: 'meeting.open', meeting: F.id, teams }, now);
+    if (!teams.length) return;
+    if (!st.agenda.length) {
+      for (let k = 1; k <= 3; k++) this.stream.emit({ kind: 'meeting.dep', meeting: F.id, step: k, team: teams[(k - 1) % teams.length], what: whatFor(k), needs: k > 1 ? k - 1 : undefined }, now);
+    } else {
+      st.agenda.forEach((a) => {
+        if (!teams.includes(a.team)) this.stream.emit({ kind: 'meeting.dep', meeting: F.id, step: a.step, team: teams[(a.step - 1) % teams.length], what: a.what, needs: a.needs }, now);
+      });
+    }
+  }
+  meetingAddStep(id: string) {
+    const st = this.meetingOf(id);
+    if (!this.builder) return;
+    if (!st.teams.length) {
+      this.notes[id] = 'Wire a team to the table first.';
+      return this.notify();
+    }
+    if (st.agenda.length >= 8) {
+      this.notes[id] = 'Eight steps is the most for now.';
+      return this.notify();
+    }
+    const step = st.agenda.reduce((n, a) => Math.max(n, a.step), 0) + 1;
+    this.stream.emit({ kind: 'meeting.dep', meeting: id, step, team: st.teams[(step - 1) % st.teams.length], what: whatFor(step), needs: step > 1 ? step - 1 : undefined }, NOW());
+    this.notes[id] = '';
+    this.notify();
+  }
+  meetingSetNeeds(id: string, step: number, needs: number | undefined) {
+    if (!this.builder) return;
+    const st = this.meetingOf(id);
+    const row = st.agenda.find((a) => a.step === step);
+    if (!row) return;
+    const map = new Map(st.agenda.map((a) => [a.step, { team: a.team, what: a.what, needs: a.needs }] as const));
+    if (needs !== undefined && wouldCycle(map, step, needs)) {
+      this.notes[id] = cycleMessage(step, needs);
+      return this.notify();
+    }
+    this.stream.emit({ kind: 'meeting.dep', meeting: id, step, team: row.team, what: row.what, needs }, NOW());
+    this.notes[id] = '';
+    this.notify();
+  }
+  meetingSetTeam(id: string, step: number, team: string) {
+    if (!this.builder) return;
+    const row = this.meetingOf(id).agenda.find((a) => a.step === step);
+    if (!row) return;
+    this.stream.emit({ kind: 'meeting.dep', meeting: id, step, team, what: row.what, needs: row.needs }, NOW());
+    this.notify();
+  }
+  /** View mode too. Starts the scripted run; every card then goes through the blind check. */
+  meetingRun(id: string) {
+    const F = this.furnById(id);
+    if (!F || F.type !== 'meeting' || F.build || this.meetingDriver.running(id)) return;
+    const st = this.meetingOf(id);
+    const off = st.agenda.find((a) => !st.teams.includes(a.team));
+    if (!st.teams.length || !st.agenda.length) this.notes[id] = 'Wire a team to the table first.';
+    else if (off) this.notes[id] = 'Step ' + off.step + ': that team is offline.';
+    else {
+      this.notes[id] = '';
+      this.meetingDriver.start(id, NOW());
+    }
+    this.notify();
+  }
   deleteFurn(id: string) {
     const F = this.furnById(id);
     if (!F) return;
-    this.m.furn = this.m.furn.filter((x) => x.id !== id);
+    this.sealCache.key = '';
+    this.m.furn = this.m.furn.filter((x) => x.id !== id && !(F.type === 'chamber' && x.type === 'drive' && x.chamber === id));
     this.card('EQUIP', FT[F.type].name, '', 'Removed from the floor.');
+    if (F.type === 'chamber') this.syncAllMeetings();
     this.sel = null;
     this.dirty = true;
     this.notify();
@@ -1176,6 +1746,167 @@ export class Sim {
     return out;
   }
 
+  // ---------------------------------------------------------------- M8: real events
+  /** One team per real source of creatures, made the first time one of its creatures is seen. */
+  private liveTeam(which: 'jobs' | 'mero'): Team {
+    const spec = LIVE_TEAMS[which];
+    const found = this.team(spec.id);
+    if (found) return found;
+    const b = this.m.sups.pip || Object.values(this.m.sups)[0];
+    // Beside the org, never on top of it: just right of everything already placed, at the first team row.
+    const x = Math.max(b.x + 300, this.orgBounds().x1 + 190);
+    const T: Team = { id: spec.id, name: spec.name, boss: b.id, x, y: b.y + 210, state: 'active', pool: [], pi: 0, born: NOW(), live: true };
+    this.m.teams.push(T);
+    this.card('ORG', this.pathName(T.id), '', spec.joined);
+    return T;
+  }
+  private liveId(h: Holder): string {
+    return (h.team === 'mero' ? 'mero-' : 'live-') + h.key;
+  }
+  /** The creature for a laptop job or a MERO agent. Its `actor` is how /views moods find it. */
+  private liveAgent(h: Holder & { team: 'jobs' | 'mero' }): Agent {
+    const id = this.liveId(h);
+    let a = this.agent(id);
+    if (!a) {
+      const T = this.liveTeam(h.team);
+      a =
+        h.team === 'jobs'
+          ? { id, name: jobName(h.key), role: 'laptop job', team: T.id, doing: null, backlog: [], done: [], blocked: null, fear: null }
+          : { id, name: creatureName(h.key), role: creatureRole(h.key), team: T.id, doing: null, backlog: [], done: [], blocked: null, fear: null };
+      this.m.agents.push(a);
+    }
+    a.actor = actorOf(h) ?? undefined;
+    return a;
+  }
+  /** A MERO agent's creature: driven by the ledger, read-only from the valley. */
+  isMeroCreature(a: Agent): boolean {
+    return !!a.actor && roleOf(a.actor) !== 'job';
+  }
+  /** Apply one real event. `quiet` sets the state without posting cards (catching up on history). `a` is null for you and sys. */
+  private applyLiveAction(a: Agent | null, act: MeroAction, quiet: boolean, who: string) {
+    if (act.kind === 'answer') {
+      const asker = act.ask === null ? undefined : this.liveAskBy.get(act.ask);
+      if (act.ask !== null) {
+        this.m.needs = this.m.needs.filter((n) => n.id !== 'ma' + act.ask);
+        this.liveAskBy.delete(act.ask);
+      }
+      const b = asker ? this.agent(asker) : undefined;
+      if (b) b.fear = null;
+      if (!quiet) this.card('YOU', b ? this.pathName(b.team) : this.liveMeroPath(), creatureName(who), ' ' + act.text.charAt(0).toLowerCase() + act.text.slice(1) + (b ? ` (${b.name})` : '') + '.');
+      return;
+    }
+    if (!a) {
+      if (!quiet && act.kind !== 'cost') this.card('LIVE', this.liveMeroPath(), creatureName(who), ': ' + act.text + '.');
+      return;
+    }
+    const path = this.pathName(a.team);
+    const mero = this.isMeroCreature(a);
+    if (act.kind === 'start') {
+      a.doing = act.text;
+      a.blocked = null;
+      this.removeNeeds(a.id, 'blocked');
+      if (!quiet) this.card('LIVE', path, a.name, ' started.');
+    } else if (act.kind === 'doing') {
+      a.doing = act.text;
+      if (!quiet) this.card('LIVE', path, a.name, ': ' + act.text + '.');
+    } else if (act.kind === 'done') {
+      if (mero) {
+        a.blocked = null;
+        this.removeNeeds(a.id, 'blocked');
+      }
+      a.doing = (mero && a.doing) || act.text;
+      if (quiet) {
+        a.done = [a.doing, ...a.done].slice(0, 8);
+        a.doing = null;
+      } else this.complete(a, NOW());
+    } else if (act.kind === 'clear') {
+      a.blocked = null;
+      this.removeNeeds(a.id, 'blocked');
+      if (!quiet) this.card('LIVE', path, a.name, ': ' + act.text + '.');
+    } else if (act.kind === 'stuck') {
+      a.doing = null;
+      a.blocked = { text: act.text, fix: 'SEEN IT' };
+      this.removeNeeds(a.id, 'blocked');
+      // A job's SEEN IT clears it here (its next run would anyway). A MERO agent's is only noted:
+      // MERO says when it's unstuck (a passing check), and its mood comes from MERO.
+      const acts: [string, string][] = mero ? [['SEEN IT', 'ack'], ['LATER', 'skip']] : [['SEEN IT', 'unblock'], ['LATER', 'skip']];
+      this.pushNeed({ id: 'nl' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'blocked', text: a.name + ': ' + act.text + '.', acts, ok: mero ? 'Noted. ' + a.name + ' stays stuck until a check passes in MERO.' : undefined });
+      if (!quiet) {
+        this.card('STUCK', path, a.name, ' ' + act.text + '.');
+        this.evLog.push({ t: NOW(), team: a.team, kind: 'stuck', who: a.name, text: act.text });
+      }
+    } else if (act.kind === 'ask') {
+      // PIP asks you about it. The valley only reads the ledger, so the answer is given in MERO.
+      a.fear = act.text;
+      if (act.seq !== null) {
+        this.liveAskBy.set(act.seq, a.id);
+        if (this.liveOpenAsks.has(act.seq))
+          this.pushNeed({ id: 'ma' + act.seq, agent: a.id, team: a.team, kind: 'fear', text: askText(a.name, act.text, act.seq), acts: [['GOT IT', 'ack'], ['LATER', 'skip']], ok: `Noted. Answer it in MERO: mero approve ${act.seq} (or --no).` });
+      }
+      if (!quiet) {
+        this.card('ASKS', path, a.name, ' asks: ' + act.text + '.');
+        this.evLog.push({ t: NOW(), team: a.team, kind: 'fear', who: a.name, text: act.text });
+      }
+    } else if (act.kind === 'cost') {
+      // The ticker counts it; a card per model call would bury everything else.
+    } else if (!quiet) {
+      this.card('LIVE', path, a.name, ': ' + act.text + '.');
+    }
+  }
+  private liveMeroPath(): string {
+    return this.team(LIVE_TEAMS.mero.id) ? this.pathName(LIVE_TEAMS.mero.id) : 'MERO';
+  }
+  private applyLiveEvent(e: MeroEvent, quiet: boolean) {
+    const h = holderOf(e);
+    this.applyLiveAction(h.team === null ? null : this.liveAgent(h as Holder & { team: 'jobs' | 'mero' }), meroAction(e), quiet, h.key);
+  }
+  /**
+   * Take a batch of real events from src/live/feed.ts. The first batch is the history
+   * so far: it sets each creature's state quietly and posts one card per team, instead
+   * of replaying a day of runs. Before onboarding there is no org to hang the teams on,
+   * so events only update the ticker; the creatures appear on the next batch after it.
+   * `moods` (MERO's /views, by actor) replaces the last ones; nothing else sets them.
+   */
+  applyLive(events: MeroEvent[], initial: boolean, moods?: Record<string, Mood>) {
+    const ready = this.m.onboarded && !this.introOn;
+    if (moods) this.liveMoods = moods;
+    const missing = () => this.liveEvents.some((e) => holderOf(e).team !== null && !this.agent(this.liveId(holderOf(e))));
+    // An empty poll matters only for new moods, or when onboarding just finished and some creature is missing.
+    if (!events.length && !initial && !moods && !(ready && missing())) return;
+    this.liveEvents = this.liveEvents.concat(events).slice(-2000);
+    // Running totals, so the cap on liveEvents never drops spend or asks.
+    this.liveCost = addCost(this.liveCost, events);
+    for (const e of events) {
+      const h = holderOf(e);
+      if (typeof e.actor === 'string') this.liveMero = true;
+      if (h.team === 'mero') this.liveActors.add(h.key);
+      if (e.event === 'approval.ask' && typeof e.seq === 'number') this.liveOpenAsks.add(e.seq);
+      if (e.event === 'approval.give' && typeof e.ask === 'number') this.liveOpenAsks.delete(e.ask);
+    }
+    const t = tally(this.liveEvents.filter((e) => holderOf(e).team === 'jobs'));
+    this.liveTicker = this.liveMero ? meroTickerText({ agents: this.liveActors.size, cost: this.liveCost, openAsks: this.liveOpenAsks.size, jobs: jobsPart(t) }) : tickerText(t);
+    if (ready) {
+      const fresh = this.liveEvents.filter((e) => holderOf(e).team !== null && !this.agent(this.liveId(holderOf(e))));
+      const freshIds = new Set(fresh.map((e) => this.liveId(holderOf(e))));
+      // New creatures catch up on the whole history (and on your answers to their asks); known ones only on what's new.
+      const replay = initial
+        ? this.liveEvents
+        : freshIds.size
+          ? this.liveEvents.filter((e) => !events.includes(e) && (holderOf(e).team === null ? e.event === 'approval.give' : freshIds.has(this.liveId(holderOf(e)))))
+          : [];
+      replay.forEach((e) => this.applyLiveEvent(e, true));
+      if (!initial) events.forEach((e) => this.applyLiveEvent(e, false));
+      if (initial) {
+        const jobs = this.team(LIVE_TEAMS.jobs.id);
+        if (jobs && t.jobs.length) this.card('LIVE', this.pathName(jobs.id), '', 'Connected to the laptop jobs: ' + t.jobs.join(', ') + '.');
+        const mero = this.team(LIVE_TEAMS.mero.id);
+        if (mero) this.card('LIVE', this.pathName(mero.id), '', 'Connected to MERO: ' + this.members(mero).map((a) => a.name).join(', ') + '.');
+      }
+    }
+    this.dirty = true;
+    this.notify();
+  }
+
   step() {
     const t = NOW();
     this.tickStory(t);
@@ -1185,7 +1916,8 @@ export class Sim {
       const dragA = this.drag && this.drag.kind === 'agent' ? this.drag.id : null;
       const live = this.m.agents.filter((a) => {
         const T = this.team(a.team);
-        return T && T.state === 'active' && a.id !== dragA;
+        // M8: real laptop jobs move only when a real event says so.
+        return T && T.state === 'active' && !T.live && a.id !== dragA && !this.paused(T.id);
       });
       live.forEach((a) => {
         if (!a.doing && a.backlog.length) a.doing = a.backlog.shift()!;
@@ -1230,9 +1962,14 @@ export class Sim {
       this.card(k, path, who, text);
       return false;
     });
+    this.tickBuilds(t);
+    this.meetingDriver.tick(t);
+    this.m.furn.forEach((F) => {
+      if (F.type === 'meeting' && !F.build && !this.synced.has(F.id)) this.syncMeeting(F);
+    });
     this.tickRecorders(t);
     if (this.evLog.length > 400) this.evLog = this.evLog.slice(-300);
-    if (this.dirty && t - this.lastSave > 1.5 && !this.drag) this.save();
+    if (this.dirty && t - this.lastSave > 1.5 && !this.drag) this.saveIdle();
   }
   tickRecorders(t: number) {
     this.m.furn.forEach((F) => {
@@ -1308,8 +2045,10 @@ export class Sim {
     return this.m.needs.filter((n) => !n.snoozeUntil || n.snoozeUntil <= t);
   }
   /** The open-asks row shape shared by PIP's popup and the feed's pinned-asks section (U13). */
-  needCards() {
-    return this.visibleNeeds().map((nd) => ({
+  needCards(underMgr?: string) {
+    return this.visibleNeeds()
+      .filter((nd) => !underMgr || this.isUnder(this.team(nd.team)?.boss || 'pip', underMgr))
+      .map((nd) => ({
       path: this.pathName(nd.team),
       text: nd.text,
       acts: nd.acts.map(([label, action], i) => ({ label, bg: i === 0 ? '#15140f' : 'transparent', fg: i === 0 ? '#f4f3ee' : '#15140f', go: () => this.act(nd, action) })),
@@ -1322,15 +2061,15 @@ export class Sim {
     this.m.needs.unshift(nd);
   }
   makeBlocked(a: Agent) {
-    const [text, fix] = BLOCKERS[a.team] || BLOCKERS._;
+    const [text, fix] = stuckCaseFor(a.name, a.team, a.blocked?.text);
     a.blocked = { text, fix };
     this.removeNeeds(a.id, 'blocked');
-    this.pushNeed({ id: 'nb' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'blocked', text: a.name + ' is stuck: ' + text + '.', acts: [[fix, 'unblock'], ['LATER', 'skip']] });
+    this.pushNeed({ id: uid('nb'), agent: a.id, team: a.team, kind: 'blocked', text: a.name + ' is stuck: ' + text + '.', acts: [[fix, 'unblock'], ['LATER', 'skip']] });
     this.card('STUCK', this.pathName(a.team), a.name, ' is stuck: ' + text + '.');
     this.evLog.push({ t: NOW(), team: a.team, kind: 'stuck', who: a.name, text });
   }
   makeFear(a: Agent) {
-    const f = FEARS[a.team] || FEARS._;
+    const f = fearFor(a.team);
     // "No, just handle it" — PIP resolves most asks itself instead of interrupting you.
     const state: DecideState = { askFirst: this.askFirst, agentName: a.name, team: a.team };
     if (decide('handleOrAsk', state, ['handled', 'ask']) === 'handled') {
@@ -1341,12 +2080,13 @@ export class Sim {
     }
     a.fear = f;
     this.removeNeeds(a.id, 'fear');
-    this.pushNeed({ id: 'nf' + Date.now().toString(36), agent: a.id, team: a.team, kind: 'fear', text: a.name + ' wants your OK before ' + f + '.', acts: [['GO AHEAD', 'approve'], ['HOLD OFF', 'hold']] });
+    this.pushNeed({ id: uid('nf'), agent: a.id, team: a.team, kind: 'fear', text: a.name + ' wants your OK before ' + f + '.', acts: [['GO AHEAD', 'approve'], ['HOLD OFF', 'hold']] });
     this.card('ASKS', this.pathName(a.team), a.name, ' wants your OK before ' + f + '.');
     this.evLog.push({ t: NOW(), team: a.team, kind: 'fear', who: a.name, text: f });
   }
   unblock(a: Agent) {
     a.blocked = null;
+    this.celebrating[a.id] = NOW();
     this.removeNeeds(a.id, 'blocked');
     this.card('YOU', this.pathName(a.team), a.name, ' is unblocked and back at it.');
     if (this.tourOn && this.tourStep === 1 && this.tourWaiting) {
@@ -1392,6 +2132,13 @@ export class Sim {
     this.card('YOU', this.pathName(a.team), a.name, ' picked up 2 new tasks.');
   }
   mood(a: Agent, t: number): Mood {
+    // M8: a real creature's mood is MERO's (/views), never the simulation's guess. A MERO agent
+    // that /views hasn't named yet reads as plain working; a laptop job falls back to its own state.
+    if (a.actor) {
+      const real = this.liveMoods[a.actor];
+      if (real) return real;
+      if (this.isMeroCreature(a)) return 'working';
+    }
     const state: DecideState = {
       blocked: !!a.blocked,
       waitingOnApproval: !!a.fear,
@@ -1410,9 +2157,9 @@ export class Sim {
       case 'bored':
         return { text: 'Nothing in my queue. Got anything for me?', why: 'empty backlog' };
       case 'frustrated':
-        return { text: 'Can’t finish this. ' + cap(a.blocked!.text) + '.', why: 'needs you' };
+        return { text: 'Can’t finish this. ' + cap(a.blocked ? a.blocked.text : 'my last check failed') + '.', why: 'needs you' };
       case 'stalled':
-        return { text: 'Not sure about ' + a.fear + '. Waiting on your OK.', why: 'waiting for your OK' };
+        return { text: 'Not sure about ' + (a.fear || 'something') + '. Waiting on your OK.', why: 'waiting for your OK' };
       case 'pending':
         return { text: 'Ready to start once you sign.', why: 'team not live' };
       default:
@@ -1446,9 +2193,12 @@ export class Sim {
       r = 0;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const p: any = { needs: [], rows: [], members: [], secs: [], acts: [], bossChips: [], equip: [], opts: [] };
-    const btn = (label: string, go: () => void, kind?: 'primary' | 'danger') => ({
+    const B = this.builder;
+    p.builder = B;
+    const btn = (label: string, go: () => void, kind?: 'primary' | 'danger', off = false) => ({
       label,
-      go,
+      go: off ? () => {} : go,
+      off,
       bg: kind === 'primary' ? '#15140f' : 'transparent',
       fg: kind === 'danger' ? '#9a3b2c' : kind === 'primary' ? '#f4f3ee' : '#15140f',
       bc: kind === 'danger' ? '#9a3b2c' : '#15140f',
@@ -1468,7 +2218,7 @@ export class Sim {
         .forEach((s) =>
           rows.push({
             name: s.name,
-            stat: 'manager · ' + plural(m.teams.filter((T) => T.boss === s.id).length + Object.values(m.sups).filter((o) => o.boss === s.id).length, 'report'),
+            stat: 'supervisor · ' + plural(m.teams.filter((T) => T.boss === s.id).length + Object.values(m.sups).filter((o) => o.boss === s.id).length, 'report'),
             dotR: '50%',
             dotBg: '#15140f',
             go: () => this.select({ kind: 'sup', id: s.id }),
@@ -1506,7 +2256,7 @@ export class Sim {
         pend = T.state === 'pending';
       p.title = a.name;
       p.sub = this.pathName(T.id) + ' · ' + a.role;
-      p.equip = equipRows(T);
+      p.equip = B ? equipRows(T) : [];
       const md = pend ? 'pending' : this.mood(a, t),
         th = this.thought(a, md);
       p.hasMood = true;
@@ -1520,19 +2270,29 @@ export class Sim {
         fn();
         this.notify();
       };
-      p.moodActs =
-        md === 'frustrated'
-          ? [btn(a.blocked!.fix, wrap(() => this.unblock(a)), 'primary')]
+      // M8: a MERO agent is read-only here; its asks are answered in MERO (mero approve).
+      p.moodActs = this.isMeroCreature(a)
+        ? []
+        : md === 'frustrated'
+          ? a.blocked
+            ? [btn(a.blocked.fix, wrap(() => this.unblock(a)), 'primary')]
+            : []
           : md === 'stalled'
             ? [btn('GO AHEAD', wrap(() => this.approve(a)), 'primary'), btn('HOLD OFF', wrap(() => this.hold(a)))]
-            : md === 'overwhelmed' && mates.length
+            : B && md === 'overwhelmed' && mates.length
               ? [btn('SPLIT LOAD', wrap(() => this.splitLoad(a)), 'primary')]
-              : md === 'bored'
+              : B && md === 'bored'
                 ? [btn('GIVE WORK', wrap(() => this.giveWork(a)), 'primary')]
                 : [];
       p.hasMoodActs = p.moodActs.length > 0;
       p.secs = this.secs(t, a.doing ? [{ text: a.doing }] : [], a.backlog.map((x) => ({ text: x })), a.done.slice(0, 4).map((x) => ({ text: x })));
-      p.hint = pend ? 'Waiting on your signature. Open VIC to sign.' : 'Drag me onto another floor to reassign.';
+      p.hint = pend
+        ? 'Waiting on your signature. Open VIC to sign.'
+        : this.isMeroCreature(a)
+          ? 'Real MERO agent: it moves only on ledger events. Answer its asks with mero approve.'
+          : B
+            ? 'Drag me onto another floor to reassign.'
+            : '';
     } else if (sel.kind === 'team') {
       const T = this.team(sel.id);
       if (!T) return null;
@@ -1541,17 +2301,19 @@ export class Sim {
       wy = T.y;
       r = roomW(mem.length) / 2;
       p.title = T.name;
-      p.sub = (this.chain(T.boss).join(' › ') || 'VIC') + ' · ' + plural(mem.length, 'agent');
-      p.hasEdit = true;
+      p.sub = 'Reports to ' + (m.sups[T.boss]?.name || 'VIC') + ' · ' + plural(mem.length, 'agent');
+      p.hasEdit = B;
       p.nameVal = T.name;
+      p.nameMax = 16;
       p.onName = (v: string) => {
         T.name = (v || '').toUpperCase();
         this.dirty = true;
         this.notify();
       };
-      p.hasBoss = true;
+      p.hasBoss = B;
+      p.bossLabel = 'MANAGED BY';
       p.bossChips = chips(T.boss, Object.values(m.sups), (id) => this.reparent('team', T.id, id));
-      p.isTeam = mem.length > 0;
+      p.isTeam = B && mem.length > 0;
       p.memberCount = mem.length;
       const moods: Record<string, number> = {};
       p.members = mem.map((a) => {
@@ -1559,11 +2321,11 @@ export class Sim {
         moods[md] = (moods[md] || 0) + 1;
         return { name: a.name + (MOOD[md].tag ? ' · ' + MOOD[md].tag : ''), go: () => this.select({ kind: 'agent', id: a.id }) };
       });
-      if (mem.length) {
+      if (B && mem.length) {
         p.hasDesc = true;
         p.desc = 'Mood: ' + Object.keys(moods).map((k) => moods[k] + ' ' + MOOD[k as Mood].label.toLowerCase()).join(' · ');
       }
-      p.equip = equipRows(T);
+      p.equip = B ? equipRows(T) : [];
       const doing: { text: string; tag?: string }[] = [],
         backlog: { text: string; tag?: string }[] = [],
         done: { text: string; tag?: string }[] = [];
@@ -1574,10 +2336,11 @@ export class Sim {
       });
       if (mem.length) p.secs = this.secs(t, doing, backlog, done.slice(0, 6));
       // 2026-09-27: a team can take one more helper at a time, up to MAX_HELPERS.
+      // The hire button is pinned above the scrolling body, so nobody scrolls to hire.
+      if (B) p.pin = [btn(mem.length < MAX_HELPERS ? '+ HIRE A HELPER' : 'TEAM IS FULL (' + MAX_HELPERS + ')', () => this.addHelper(T.id), 'primary', mem.length >= MAX_HELPERS)];
       p.acts = [];
-      if (mem.length < MAX_HELPERS) p.acts.push(btn('+ HELPER', () => this.addHelper(T.id), 'primary'));
-      if (!mem.length) p.acts.push(btn('DELETE FLOOR', () => this.deleteTeam(T.id), 'danger'));
-      p.hint = T.state === 'pending' ? 'Pending your signature. Open VIC to sign.' : mem.length ? 'Drag the floor onto a manager to change who it reports to.' : 'Empty floor. Drag agents in from other teams to staff it.';
+      if (B && !mem.length) p.acts.push(btn('DELETE FLOOR', () => this.deleteTeam(T.id), 'danger'));
+      p.hint = T.state === 'pending' ? 'Pending your signature. Open VIC to sign.' : !B ? '' : mem.length ? 'Drag the floor onto a manager to change who it reports to.' : 'Empty floor. Drag agents in from other teams to staff it.';
     } else if (sel.kind === 'furn') {
       const F = this.furnById(sel.id);
       if (!F) return null;
@@ -1585,9 +2348,16 @@ export class Sim {
       wx = F.x;
       wy = F.y;
       r = 26;
+      if (F.type === 'chamber' || F.type === 'meeting' || F.type === 'drive') {
+        r = F.type === 'meeting' ? 70 : 44;
+        p.title = D.name;
+        p.sub = 'PREVIEW · simulated';
+        p.fac = facilityPanel(this, F);
+        p.acts = B && F.type !== 'drive' ? [btn('REMOVE', () => this.deleteFurn(F.id), 'danger')] : [];
+      } else {
       const ts = this.inRange(F);
       p.title = D.name;
-      p.sub = ts.length ? 'serving ' + ts.length + (ts.length === 1 ? ' team' : ' teams') : 'not near any team';
+      p.sub = F.build ? 'being built' : F.owner ? 'inside ' + (this.team(F.owner)?.name || 'a team') + ' · team only' : ts.length ? 'shared · wired to ' + ts.length + (ts.length === 1 ? ' team' : ' teams') : 'shared · not wired to any team yet';
       p.hasDesc = true;
       p.desc = D.desc;
       p.hasOpts = true;
@@ -1599,6 +2369,7 @@ export class Sim {
         fg: F.on[i] ? '#f4f3ee' : '#15140f',
         border: F.on[i] ? '2px solid #15140f' : '2px dashed rgba(21,20,15,.4)',
         go: () => {
+          if (!B) return;
           if (radio) F.on = D.opts.map((_, k) => k === i);
           else F.on[i] = !F.on[i];
           this.dirty = true;
@@ -1622,13 +2393,15 @@ export class Sim {
         }
       }
       p.hasRows = true;
-      p.rowsLabel = 'IN RANGE';
+      p.rowsLabel = F.owner ? 'SERVES' : 'WIRED TO';
       p.rowCount = ts.length;
       p.noRows = !ts.length;
-      p.noRowsText = 'Drag it close to a team floor.';
-      p.rows = ts.map((T) => ({ name: T.name, stat: teamStat(T), dotR: '3px', dotBg: '#fbfaf5', go: () => this.select({ kind: 'team', id: T.id }) }));
-      p.acts = [btn('REMOVE', () => this.deleteFurn(F.id), 'danger')];
-      p.hint = F.type === 'rec' ? 'It watches; agents don’t walk to it.' : 'Agents on floors inside the dashed ring walk over to use it and finish work faster.';
+      p.noRowsText = F.owner ? 'Team only.' : B ? 'Press WIRE, then click a team plug.' : 'Not wired to any team.';
+      p.rows = ts.map((T) => ({ name: T.name, stat: teamStat(T), dotR: '3px', dotBg: '#fbfaf5', go: () => this.select({ kind: 'team', id: T.id }), actLabel: F.owner || !B ? '' : 'UNPLUG', act: () => this.unplug(F.id, T.id) }));
+      if (B && !F.owner && !F.build) p.pin = [btn('+ WIRE TO A TEAM', () => this.startWiring(F.id), 'primary')];
+      p.acts = B ? [btn('REMOVE', () => this.deleteFurn(F.id), 'danger')] : [];
+      p.hint = F.build ? 'A builder is on it. It starts working when the bar fills.' : F.owner ? 'Inside ' + (this.team(F.owner)?.name || 'the team') + '’s quarters: it lives in that team’s folder and serves only them. Drag it outside to share it with other teams (slower to wire).' : F.type === 'rec' ? 'It watches; agents don’t walk to it.' : 'Agents with a path to this unit will have access to it.';
+      }
     } else {
       const s = m.sups[sel.id];
       if (!s) return null;
@@ -1637,27 +2410,33 @@ export class Sim {
       r = s.size * 0.9;
       p.title = s.name;
       const rows = reportRows(s.id);
+      const full = this.managerFull(s.id);
       p.hasRows = true;
-      p.rowsLabel = 'DIRECT REPORTS';
+      p.rowsLabel = 'MANAGES';
       p.rows = rows;
-      p.rowCount = rows.length;
+      p.rowCount = s.id === 'pip' ? String(rows.length) : rows.length + '/' + MAX_TEAMS_PER_MANAGER;
       p.noRows = !rows.length;
-      p.noRowsText = 'No reports yet. Drop a team or manager on ' + s.name + '.';
+      p.noRowsText = B ? 'Nothing yet. Add a team above, or drop one on ' + s.name + '.' : 'Nothing yet.';
       if (s.id === 'pip') {
-        p.sub = 'CHIEF OF STUFF · ' + plural(m.teams.filter((T) => T.state === 'active').length, 'team') + ' running';
+        p.sub = plural(m.teams.filter((T) => T.state === 'active').length, 'team') + ' running';
+        p.hasEdit = false;
+        p.role = 'CHIEF OF STUFF';
         const vNeeds = this.visibleNeeds();
         p.hasNeeds = true;
         p.needCount = vNeeds.length;
         p.noNeeds = vNeeds.length === 0;
         p.needs = this.needCards();
-        p.acts = [btn('+ MANAGER', () => this.addManager('pip'), 'primary'), btn('+ TEAM', () => this.addTeam('pip'))];
+        if (B) p.pin = [btn('+ TEAM', () => this.addTeam('pip'), 'primary'), btn('+ SUPERVISOR', () => this.addManager('pip'))];
         p.hint = 'Everything your teams can’t decide alone lands here.';
       } else {
-        p.sub = s.role + ' · manager';
-        p.hasEdit = true;
-        p.hasRole = true;
+        p.role = s.role;
+        p.rowsFirst = true;
+        p.sub = 'under ' + (m.sups[s.boss || 'pip']?.name || 'VIC');
+        p.hasEdit = B;
         p.nameVal = s.name;
         p.roleVal = s.role;
+        p.hasRole = true;
+        p.nameMax = 14;
         p.onName = (v: string) => {
           s.name = (v || '').toUpperCase();
           this.dirty = true;
@@ -1668,19 +2447,28 @@ export class Sim {
           this.dirty = true;
           this.notify();
         };
-        p.hasBoss = true;
+        p.hasBoss = B;
+        p.bossLabel = 'MANAGED BY';
         p.bossChips = chips(
           s.boss,
           Object.values(m.sups).filter((o) => o.id !== s.id && !this.isUnder(o.id, s.id)),
           (id) => this.reparent('sup', s.id, id),
         );
-        p.acts = [btn('+ SUB-MANAGER', () => this.addManager(s.id), 'primary'), btn('+ TEAM', () => this.addTeam(s.id)), btn('RETIRE', () => this.deleteManager(s.id), 'danger')];
-        p.hint = 'Drag onto another manager to move this whole branch.';
+        if (B) p.pin = [btn(full ? 'FULL ' + MAX_TEAMS_PER_MANAGER + '/' + MAX_TEAMS_PER_MANAGER : '+ TEAM', () => this.addTeam(s.id), 'primary', full), btn('+ SUPERVISOR', () => this.addManager(s.id), undefined, full)];
+        p.acts = B ? [btn('RETIRE', () => this.deleteManager(s.id), 'danger')] : [];
+        p.hint = B ? 'Drag onto another manager to move this whole branch.' : '';
+        // What needs attention under this manager.
+        const mine = this.needCards(s.id);
+        p.hasNeeds = true;
+        p.needCount = mine.length;
+        p.noNeeds = mine.length === 0;
+        p.needs = mine;
       }
     }
     p.moodActs = p.moodActs || [];
     p.hasEquip = p.equip.length > 0;
     p.hasActs = p.acts.length > 0;
+    p.hasPin = !!p.pin && p.pin.length > 0;
     p.hasHint = !!p.hint;
     const sx = P.x + wx * z,
       sy = P.y + wy * z,
@@ -1738,13 +2526,42 @@ export class Sim {
     });
     this.apos = {};
     const eqMap: Record<string, Furniture[]> = {};
-    m.furn.forEach((F) =>
-      this.inRange(F).forEach((T) => {
-        (eqMap[T.id] = eqMap[T.id] || []).push(F);
-        line([F.x, F.y], [T.x, T.y], 0.28, 1.5, 'dotted');
-      }),
-    );
+    // Wires: one orthogonal path per (shared item, team), kept out of every other team's box.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const wires: any[] = [];
+    const boxes = m.teams
+      .filter((T) => T.state !== 'hidden')
+      .map((T) => {
+        const n = this.members(T).length;
+        return { id: T.id, x0: T.x - roomW(n) / 2 - 8, x1: T.x + roomW(n) / 2 + 8, y0: T.y - roomH(n) / 2 - 8, y1: T.y + roomH(n) / 2 + 8 };
+      });
+    const sealed = this.sealedMap();
+    const fviews = new Map<string, any>();
+    m.furn.forEach((F) => {
+      if (F.type === 'meeting' && !F.build) fviews.set(F.id, meetingRV(this, F, t));
+      // Tools equip the teams they serve. Meeting spaces, chambers and drives are not tools.
+      if (F.type !== 'meeting') this.inRange(F).forEach((T) => (eqMap[T.id] = eqMap[T.id] || []).push(F));
+      if (F.owner || F.build || F.type === 'chamber' || F.type === 'drive') return;
+      // Wires follow F.wires directly, so a team sealed in a chamber still shows its cut wires (grey, dashed).
+      (F.wires || []).forEach((tid) => {
+        const T = this.team(tid);
+        if (!T || T.state === 'hidden') return;
+        const side: -1 | 1 = F.x < T.x ? -1 : 1;
+        const plug = this.plugPoint(T, side);
+        const door = F.type === 'meeting' ? fviews.get(F.id)?.doors[tid] : null;
+        const pts = routeWire(door ? [door.x, door.y] : [F.x, F.y], plug, side, boxes.filter((b) => b.id !== T.id));
+        wires.push({ id: F.id + '>' + T.id, pts: pts.map((q) => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' '), dot: plug, on: this.wiring === F.id, color: F.type === 'meeting' ? teamColor(this, tid) : '#15140f', cut: sealed.has(tid), cable: false });
+      });
+      return;
+    });
+    // Data cables: a chamber's port to its drive. A thicker class of wire.
+    m.furn.forEach((C) => {
+      const D = C.type === 'chamber' && C.link ? this.furnById(C.link) : null;
+      if (C.type === 'chamber' && D && !C.build) wires.push({ id: C.id + '>' + D.id, pts: cablePts(C, D), dot: null, on: this.wiring === C.id, color: '#15140f', cut: false, cable: true });
+    });
     this.eqMap = eqMap;
+    const wiringF = this.wiring ? this.furnById(this.wiring) : null;
+    if (this.wiring && !wiringF) this.wiring = null;
 
     m.furn.forEach((F) => {
       const D = FT[F.type],
@@ -1753,7 +2570,32 @@ export class Sim {
       const born = F.born != null ? cl((t - F.born) / 0.5, 0, 1) : 1;
       if (born < 1) motion = true;
       const nOn = F.on.filter(Boolean).length;
+      const bl = F.build ? cl((t - F.build.start) / F.build.dur, 0, 1) : 1;
+      const owned = !!F.owner;
+      if (F.build) motion = true;
+      // The builder walks in from the left during the first fifth, then hammers on the spot.
+      const walkIn = cl(bl / 0.2, 0, 1);
+      const hammer = !this.reducedMotion && walkIn >= 1 ? Math.abs(Math.sin(t * 14)) : 0;
+      const fv = F.build ? null : F.type === 'chamber' ? chamberRV(this, F, t) : F.type === 'drive' ? driveRV(this, F, t) : fviews.get(F.id) || null;
+      if (fv && fv.motion) motion = true;
+      const fac = F.type === 'chamber' || F.type === 'meeting' || F.type === 'drive';
       furn.push({
+        fac,
+        fv,
+        bad: dragging && this.illegalAt(F.type, F.x, F.y),
+        hot: this.hoverChamber === F.id,
+        armedDrive: !!wiringF && wiringF.type === 'chamber' && F.type === 'drive' && F.chamber === wiringF.id,
+        plusPos: F.type === 'chamber' ? { l: 34, t: -8 } : F.type === 'meeting' ? { l: 50, t: -76 } : { l: 14, t: -34 },
+        labelTop: F.type === 'chamber' ? 38 : F.type === 'meeting' ? 76 : F.type === 'drive' ? 26 : 34,
+        building: !!F.build,
+        plus: this.builder && !F.owner && !F.build && F.type !== 'drive',
+        wiringThis: this.wiring === F.id,
+        startWire: () => this.startWiring(F.id),
+        prog: bl,
+        owned,
+        wx: lerp(-64, 30, inOutSine(walkIn)),
+        wy: 14 - hammer * 5,
+        wr: hammer * 18,
         ls: labelScale,
         id: F.id,
         x: F.x,
@@ -1761,12 +2603,12 @@ export class Sim {
         kind: F.type,
         t,
         label: D.name,
-        sub: nOn + ' on · ' + plural(this.inRange(F).length, 'team'),
+        sub: F.build ? 'building ' + Math.round(bl * 100) + '%' : fac ? (F.type === 'drive' ? 'simulated' : 'PREVIEW · simulated') : owned ? 'team only' : nOn + ' on · ' + plural(this.inRange(F).length, 'team'),
         showRange: isSel || dragging,
         rL: -FR,
         rD: FR * 2,
         z: isSel || dragging ? 8 : 0,
-        sc: (born < 1 ? outBack(born) : 1) * (dragging ? 1.1 : 1),
+        sc: (born < 1 ? outBack(born) : 1) * (dragging ? 1.05 : 1) * (owned ? 0.55 : 1),
         down: (e: React.PointerEvent) => this.nodeDown(e, 'furn', F.id),
       });
     });
@@ -1890,6 +2732,27 @@ export class Sim {
           e2 += look;
           eH = 3;
         }
+        // Unblock celebration: 3.6 s of hopping, a colour change and sparkles. Reduced motion keeps
+        // only the colour change (no hopping, no sparkle flicker).
+        const cAt = this.celebrating[a.id];
+        const ce = cAt != null ? t - cAt : -1;
+        const celeb = ce >= 0 && ce < CELEBRATE_SECS;
+        if (cAt != null && !celeb) delete this.celebrating[a.id];
+        let bodyBg = '#15140f';
+        if (celeb) {
+          const fade = ce > CELEBRATE_SECS - 0.5 ? (CELEBRATE_SECS - ce) / 0.5 : 1;
+          if (!this.reducedMotion) {
+            motion = true;
+            bob = -Math.abs(Math.sin(ce * 9)) * 9 * fade;
+            rot = Math.sin(ce * 18) * 10 * fade;
+            bsc2 = 1 + 0.12 * Math.abs(Math.sin(ce * 9)) * fade;
+            eH = 3.6;
+            eT = 5.2;
+          }
+          // A warm colour pop, easing back to ink. (No rainbow.)
+          const pop = this.reducedMotion ? 1 : 0.85 + 0.15 * Math.sin(ce * 9);
+          bodyBg = 'hsl(' + (38 - (1 - pop) * 10).toFixed(0) + ' ' + (fade * 92).toFixed(0) + '% ' + (62 - (1 - fade) * 54).toFixed(0) + '%)';
+        }
         // U15/T6: prefers-reduced-motion stops the bob, the pulse and the aura.
         if (this.reducedMotion) bob = 0;
         const blink = ((t * 0.9 + ph * 1.37) % 4.3) < 0.13;
@@ -1897,6 +2760,12 @@ export class Sim {
           eT += (eH - 0.8) / 2;
           eH = 0.8;
         }
+        const ackAt = this.acking[a.id];
+        const ackE = ackAt != null ? t - ackAt : -1;
+        if (ackAt != null && ackE >= ACK_SECS) delete this.acking[a.id];
+        const hasAck = ackE >= 0 && ackE < ACK_SECS;
+        if (ackAt != null && ackE < ACK_SECS) motion = true;
+        const ackPop = hasAck ? (this.reducedMotion ? 1 : outBack(cl(ackE / 0.25, 0, 1))) : 0;
         const aSel = !!(sel && sel.kind === 'agent' && sel.id === a.id),
           hov = this.hoverAgent === a.id;
         const notable = md !== 'working' && md !== 'pending';
@@ -1931,7 +2800,13 @@ export class Sim {
           b1L: e1 - 0.8,
           b2L: e2 - 0.8,
           browT: eT - 2.2,
-          isFlow: md === 'flow' && !walking,
+          bodyBg,
+          celeb,
+          handsUp: celeb ? (this.reducedMotion ? 0 : Math.sin(ce * 9)) : 0,
+          hasAck,
+          ackSc: ackPop,
+          ackOp: hasAck ? cl((ACK_SECS - ackE) / 0.3, 0, 1) : 0,
+          isFlow: (md === 'flow' && !walking) || (celeb && !this.reducedMotion),
           isOver: md === 'overwhelmed',
           isBored: md === 'bored',
           isFrus: md === 'frustrated',
@@ -1979,7 +2854,12 @@ export class Sim {
         .filter((v, j, arr) => arr.indexOf(v) === j)
         .join(' · ');
       const anyStuck = mem.some((a) => a.blocked);
+      const inCh = sealed.get(T.id) || null;
+      const isPaused = !!inCh && this.chamberOf(inCh).lamp === 'blink';
       rooms.push({
+        locked: !!inCh,
+        lockText: isPaused ? 'PAUSED' : 'IN CHAMBER',
+        paused: isPaused,
         ls: labelScale,
         id: T.id,
         l: T.x - w / 2,
@@ -1992,8 +2872,8 @@ export class Sim {
         ripple: fe >= 0 && fe < 0.7,
         ro: 0.5 * (1 - cl(fe / 0.7, 0, 1)),
         rs: 1 + cl(fe / 0.7, 0, 1) * 0.35,
-        bg: pend ? 'rgba(251,250,245,.55)' : hot ? '#ffffff' : '#fbfaf5',
-        border: pend ? '2px dashed rgba(21,20,15,.28)' : anyStuck ? '3px solid #d63c2f' : hot ? '3px solid #15140f' : '2px solid #15140f',
+        bg: inCh ? '#ecebe4' : pend ? 'rgba(251,250,245,.55)' : hot ? '#ffffff' : '#fbfaf5',
+        border: inCh ? '2px solid #6b6a62' : pend ? '2px dashed rgba(21,20,15,.28)' : anyStuck ? '3px solid #d63c2f' : hot ? '3px solid #15140f' : '2px solid #15140f',
         shadow: pend ? 'none' : isSel || hot ? '0 4px 0 rgba(21,20,15,.1), 0 0 0 6px rgba(21,20,15,.1)' : '0 4px 0 rgba(21,20,15,.1)',
         labelColor: pend ? '#6b6a62' : '#15140f',
         name: T.name,
@@ -2006,7 +2886,19 @@ export class Sim {
           return { c: md === 'working' ? '#fbfaf5' : MOOD[md].c, w: md === 'working' ? 6 : 12 };
         }),
         desks: dk.map((d) => ({ l: w / 2 + d[0] - 10, t: h / 2 + d[1] + 8, c: pend ? 'rgba(21,20,15,.2)' : 'rgba(21,20,15,.5)' })),
-        agents,
+        agents: inCh ? [] : agents,
+        plugs: ([-1, 1] as const).map((sd) => {
+          const wired = !!wiringF && (wiringF.wires || []).includes(T.id);
+          return {
+            side: sd,
+            left: sd < 0 ? -9 : w - 9,
+            top: h / 2 - 13,
+            armed: !!wiringF && wiringF.type !== 'chamber' && !pend && !inCh,
+            wired,
+            used: m.furn.some((F) => !F.owner && !F.build && (F.wires || []).includes(T.id) && (F.x < T.x ? -1 : 1) === sd),
+            go: () => this.plugClick(T.id),
+          };
+        }),
         // U15/T6: keyboard access for the floor itself.
         ariaLabel: T.name + ', ' + (pend ? 'pending' : anyStuck ? 'has a stuck agent' : n === 0 ? 'empty' : plural(n, 'agent')),
         activate: () => this.select({ kind: 'team', id: T.id }),
@@ -2121,8 +3013,10 @@ export class Sim {
     }
     const newF = !!(dr && dr.kind === 'newfurn' && dr.moved);
     const overWorld = newF && this.mouse.y < vh - 120 && this.mouse.x < vw - this.feedW();
-    const ghost = newF ? { x: this.mouse.x, y: this.mouse.y, kind: dr!.type, t, sc: overWorld ? z : 0.9, label: overWorld ? 'place ' + FT[dr!.type!].name : 'drag onto the floor' } : { x: 0, y: 0, kind: 'mcp' as const, t, sc: 1, label: '' };
-    const reTag = this.hoverMgr && S[this.hoverMgr] ? { x: this.mouse.x + 16, y: this.mouse.y + 18, text: '→ report to ' + S[this.hoverMgr].name } : { x: 0, y: 0, text: '' };
+    const gw = newF && overWorld ? this.toWorld(this.mouse.x, this.mouse.y) : null;
+    const ghostBad = !!gw && this.illegalAt(dr!.type!, gw.x, gw.y);
+    const ghost = newF ? { x: this.mouse.x, y: this.mouse.y, kind: dr!.type, t, sc: overWorld ? z : 0.9, label: overWorld ? (ghostBad ? 'not inside quarters' : 'place ' + FT[dr!.type!].name) : 'drag onto the floor', bad: ghostBad, ok: !!gw && !ghostBad && !!FACILITY_RULES[dr!.type!]?.sharedOnly } : { x: 0, y: 0, kind: 'mcp' as const, t, sc: 1, label: '', bad: false, ok: false };
+    const reTag = this.hoverChamber ? { x: this.mouse.x + 16, y: this.mouse.y + 18, text: '→ move in and seal the door' } : this.hoverMgr && S[this.hoverMgr] ? { x: this.mouse.x + 16, y: this.mouse.y + 18, text: this.managerFull(this.hoverMgr) ? S[this.hoverMgr].name + ' is full (' + MAX_TEAMS_PER_MANAGER + '/' + MAX_TEAMS_PER_MANAGER + ')' : '→ report to ' + S[this.hoverMgr].name + ' (' + this.managerLoad(this.hoverMgr) + '/' + MAX_TEAMS_PER_MANAGER + ')' } : { x: 0, y: 0, text: '' };
 
     const nowMs = Date.now();
     const ago = (ms: number) => (ms < 10000 ? 'now' : ms < 60000 ? Math.floor(ms / 1000) + 's' : Math.floor(ms / 60000) + 'm');
@@ -2136,6 +3030,7 @@ export class Sim {
         path: c.path || '',
         who: c.who ? c.who + (c.kind === 'DONE' ? ' ✓ ' : '') : '',
         text: c.text,
+        sig: signature(c),
         ago: ago(nowMs - c.ts),
         op: outCubic(pr),
         tx: (1 - outCubic(pr)) * 40,
@@ -2151,6 +3046,8 @@ export class Sim {
 
     const pop = sel ? this.buildPop(t, vw, vh) : null;
     const tgt = S[this.addTargetId()] || S.pip;
+    const walkers = walkersFor(this, t);
+    if (walkers.length) motion = true;
     if (this.sel && t - this.popAt < 0.3) motion = true;
     this.motion = motion;
 
@@ -2161,6 +3058,11 @@ export class Sim {
       gridSize: 30 * z,
       bgCursor: dr && dr.moved ? 'grabbing' : 'default',
       lines,
+      builder: this.builder,
+      toggleBuilder: () => this.toggleBuilder(),
+      wires,
+      wiringName: wiringF ? FT[wiringF.type].name : null,
+      cancelWiring: () => this.cancelWiring(),
       rooms,
       ghosts,
       sups,
@@ -2170,10 +3072,12 @@ export class Sim {
       dragAg,
       hasGhost: newF,
       ghost,
-      hasReTag: !!this.hoverMgr,
+      hasReTag: !!this.hoverMgr || !!this.hoverChamber,
+      toast: t < this.toastUntil ? this.toastText : '',
+      walkers,
       reTag,
       dock: FT.mcp
-        ? (['mcp', 'db', 'books', 'rec'] as const).map((k) => ({
+        ? DOCK_KINDS.map((k) => ({
             kind: k,
             t,
             short: FT[k].short,
@@ -2209,6 +3113,7 @@ export class Sim {
       // V1: PIP is the prime supervisor, not a "manager" — don't count her.
       mgrCount: Object.keys(S).length - 1,
       furnCount: m.furn.length,
+      liveTicker: this.liveTicker,
       zoomPct: Math.round(z * 100),
       zoomIn: () => {
         this.zoomAt((vw - this.feedW()) / 2, vh / 2, 1.2);
@@ -2238,6 +3143,10 @@ export class Sim {
           /* ignore */
         }
         this.m = blank();
+        this.stream = new EventStream();
+        this.meetingDriver = new MeetingDriver(this.stream);
+        this.synced.clear();
+        this.notes = {};
         this.sel = null;
         this.pulses = [];
         this.disp = {};

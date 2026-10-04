@@ -149,8 +149,8 @@ await sleep(300);
 console.log('stop1 cleared after the fix:', !(await js('window.__sim.tourWaiting')));
 console.log('U3 sel cleared after stop1 fix (popup does not cover the tour):', await js('window.__sim.sel === null'));
 
-// U14: the tour is two stops now -- NEXT at stop 1 ends it directly, no tools/recorder stops.
-await js('window.__sim.tourNext()');
+// v3: the tour is six short stops (org, fix, logs, toolbar, place and wire, manages); NEXT walks them.
+for (let i = 0; i < 8 && (await js('window.__sim.tourOn')); i++) { await js('window.__sim.tourNext()'); await sleep(150); }
 await sleep(1000);
 console.log('onboarded after tour end:', await js('window.__sim.m.onboarded'));
 console.log('tourOn after end:', await js('window.__sim.tourOn'));
@@ -221,13 +221,13 @@ if (!MOBILE) {
   const fps = await js('new Promise(r=>{let n=0;const t0=performance.now();(function f(){n++;performance.now()-t0<2000?requestAnimationFrame(f):r(Math.round(n/2))})()})');
   console.log('fps', fps);
 
-  // T4: renderTicks (one per notify()) over an idle 5s should be well under 300 --
-  // requestAnimationFrame still runs every frame (fps above is unaffected), but a
-  // full-tree re-render no longer follows every one of them.
+  // v3 lag fix: ambient animation (bob, blink, aura) is a function of the clock, so an idle
+  // valley must redraw on every frame (about 60/s, 300 in 5 s). The old T4 check wanted fewer
+  // than 300 and that is exactly what made idle motion drop to 4 Hz. Now it must keep up.
   const ticksBefore = await js('window.__sim.renderTicks');
   await sleep(5000);
   const ticksAfter = await js('window.__sim.renderTicks');
-  console.log('T4 render ticks over idle 5s well under 300:', ticksAfter - ticksBefore < 300, ticksAfter - ticksBefore);
+  console.log('v3 idle valley redraws every frame (>= 240 ticks in 5s):', ticksAfter - ticksBefore >= 240, ticksAfter - ticksBefore);
 
   // --- Regression: "skip" still loads the full valley, and runs the scripted story. ---
   await js("localStorage.removeItem('the-system-live-v4'); location.reload()"); await sleep(2500);
@@ -279,10 +279,12 @@ if (!MOBILE) {
   })()`);
   console.log('U7 >=60% working or in flow:', moodInfo.pct >= 0.6, JSON.stringify(moodInfo));
 
+  await js('window.__sim.toggleBuilder(true)'); // re-org drags are Builder-mode only
   const at = (name, dy = 0) => js(`(()=>{const el=[...document.querySelectorAll('div,span')].filter(e=>e.textContent.trim().startsWith(${JSON.stringify(name)})).sort((x,y)=>x.textContent.length-y.textContent.length)[0];if(!el)return null;const r=el.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2+${dy}]})()`);
   const g = await at('JOB HUNT', 40), a = await at('OTTO', -30);
   await drag(g[0], g[1], a[0], a[1]); await shot('t2-jobhunt-to-otto');
   console.log('ORG card after dropping JOB HUNT on OTTO:', /ORG/.test(await feedText()));
+  await js('window.__sim.toggleBuilder(false)');
   await sleep(1200);
   await js('location.reload()'); await sleep(2500);
   await clickByText('RESET'); await sleep(400);
@@ -360,12 +362,12 @@ if (!MOBILE) {
 }
 // 2026-09-27: a team's popup offers + HELPER, and it adds exactly one helper to that team.
 {
-  const before = await js(`(()=>{const s=window.__sim;if(!s.m.teams.some(t=>t.state==='active'))s.skipIntro();const T=s.m.teams.find(t=>t.state==='active');s.sel={kind:'team',id:T.id};s.popAt=0;s.notify();return {id:T.id,n:s.members(T).length};})()`);
+  const before = await js(`(()=>{const s=window.__sim;if(!s.m.teams.some(t=>t.state==='active'))s.skipIntro();const T=s.m.teams.find(t=>t.state==='active');s.toggleBuilder(true);s.sel={kind:'team',id:T.id};s.popAt=0;s.notify();return {id:T.id,n:s.members(T).length};})()`);
   await sleep(500);
-  const hasBtn = await js(`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='+ HELPER')`);
-  await clickByText('+ HELPER'); await sleep(500);
+  const hasBtn = await js(`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='+ HIRE A HELPER')`);
+  await clickByText('+ HIRE A HELPER'); await sleep(500);
   const after = await js(`window.__sim.members(window.__sim.team(${JSON.stringify(before.id)})).length`);
-  console.log('team popup has + HELPER and it adds one helper:', hasBtn && after === before.n + 1, JSON.stringify({ before: before.n, after }));
+  console.log('team popup has + HIRE A HELPER and it adds one helper:', hasBtn && after === before.n + 1, JSON.stringify({ before: before.n, after }));
 }
 // 2026-09-27: on desktop/tablet the zoom row, the needs pill and the dock never overlap.
 if (!MOBILE) {

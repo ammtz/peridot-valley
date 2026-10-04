@@ -37,12 +37,34 @@ export function Agent({ a }: { a: any }) {
       {a.isFrus && (
         <span style={{ position: 'absolute', left: 14, top: a.puffT, width: 4, height: 4, borderRadius: '50%', border: '1px solid #15140f', opacity: a.puffO }} />
       )}
+      {a.hasAck && (
+        <div style={{ position: 'absolute', left: 18, bottom: a.icB + 18, transform: `translateX(-50%) scale(${a.ackSc})`, opacity: a.ackOp, pointerEvents: 'none', whiteSpace: 'nowrap', fontSize: 7.5, fontWeight: 800, letterSpacing: '.06em', background: '#3aa865', color: '#15140f', border: '1.5px solid #15140f', borderRadius: 7, padding: '1px 5px' }}>
+          READ ✓
+        </div>
+      )}
       {a.hasAura && (
         <div style={{ position: 'absolute', left: 3, top: 24, width: 30, height: 10, borderRadius: '50%', background: a.mc, opacity: a.auraOp, transform: `scale(${a.auraSc})`, pointerEvents: 'none' }} />
       )}
-      <div style={{ position: 'absolute', left: a.bodyL, top: a.bodyT, width: 17, height: 17, borderRadius: 5, background: '#15140f', boxShadow: '0 2px 0 rgba(21,20,15,.16)', transform: `rotate(${a.rot}deg) scale(${a.bsc})` }}>
-        <div style={{ position: 'absolute', left: a.e1L, top: a.eT, width: a.eW, height: a.eH, borderRadius: 1, background: '#f4f3ee' }} />
-        <div style={{ position: 'absolute', left: a.e2L, top: a.eT, width: a.eW, height: a.eH, borderRadius: 1, background: '#f4f3ee' }} />
+      {a.celeb && (
+        <>
+          {/* Two small hands outside the square, raised and waving */}
+          <span style={{ position: 'absolute', left: a.bodyL - 5, top: a.bodyT - 7 - a.handsUp * 1.5, width: 4, height: 7, borderRadius: 2, background: a.bodyBg, border: '1.3px solid #15140f', transform: `rotate(${-18 + a.handsUp * 10}deg)` }} />
+          <span style={{ position: 'absolute', left: a.bodyL + 18, top: a.bodyT - 7 - a.handsUp * 1.5, width: 4, height: 7, borderRadius: 2, background: a.bodyBg, border: '1.3px solid #15140f', transform: `rotate(${18 - a.handsUp * 10}deg)` }} />
+        </>
+      )}
+      <div style={{ position: 'absolute', left: a.bodyL, top: a.bodyT, width: 17, height: 17, borderRadius: 5, background: a.bodyBg, boxShadow: '0 2px 0 rgba(21,20,15,.16)', transform: `rotate(${a.rot}deg) scale(${a.bsc})` }}>
+        {a.celeb ? (
+          <>
+            {/* Happy half-closed eyes, an upside-down U on each: n n */}
+            <div style={{ position: 'absolute', left: 2.4, top: 6, width: 4.6, height: 3.2, borderRadius: '4px 4px 0 0', border: '1.7px solid #15140f', borderBottom: 'none' }} />
+            <div style={{ position: 'absolute', left: 10, top: 6, width: 4.6, height: 3.2, borderRadius: '4px 4px 0 0', border: '1.7px solid #15140f', borderBottom: 'none' }} />
+          </>
+        ) : (
+          <>
+            <div style={{ position: 'absolute', left: a.e1L, top: a.eT, width: a.eW, height: a.eH, borderRadius: 1, background: '#f4f3ee' }} />
+            <div style={{ position: 'absolute', left: a.e2L, top: a.eT, width: a.eW, height: a.eH, borderRadius: 1, background: '#f4f3ee' }} />
+          </>
+        )}
         {a.isFrus && (
           <>
             <div style={{ position: 'absolute', left: a.b1L, top: a.browT, width: 4, height: 1.3, background: '#f4f3ee', transform: 'rotate(24deg)' }} />

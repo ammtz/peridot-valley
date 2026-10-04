@@ -4,25 +4,12 @@ export const KEY = 'the-system-live-v4';
 /** T5: bump whenever demo-v2 changes the saved shape, and add the fill-in to Sim.migrate(). */
 export const CURRENT_V = 4;
 
+/** A manager (other than VIC, the chief) can hold at most this many teams and sub-managers. */
+export const MAX_TEAMS_PER_MANAGER = 5;
+
 export const cap = (x: string) => (x ? x[0].toUpperCase() + x.slice(1) : x);
 /** V5: "N word(s)" — pass the plural form only when it isn't just `word + 's'`. */
 export const plural = (n: number, word: string, pluralWord = word + 's') => n + ' ' + (n === 1 ? word : pluralWord);
-
-export const BLOCKERS: Record<string, [string, string]> = {
-  job: ['the job site logged me out', 'LOG BACK IN'],
-  inbox: ['calendar access expired', 'RECONNECT'],
-  money: ['the bank login expired', 'RE-AUTH BANK'],
-  home: ['the grocery site is down', 'TRY AGAIN'],
-  _: ['a login expired', 'RE-AUTH'],
-};
-
-export const FEARS: Record<string, string> = {
-  job: 'sending an application in your name',
-  inbox: 'declining a meeting for you',
-  money: 'cancelling a subscription',
-  home: 'booking the plumber for Tuesday',
-  _: 'doing this without asking',
-};
 
 // U12: one vocabulary for moods — STUCK, UNSURE, SWAMPED, BORED, FLOW. `label` and
 // `tag` used to say two different things for the same mood key; now they agree,
@@ -48,6 +35,9 @@ export const outCubic = (p: number) => 1 - Math.pow(1 - p, 3);
 export const inOutSine = (p: number) => -(Math.cos(Math.PI * p) - 1) / 2;
 export const inOutCubic = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
 export const NOW = () => performance.now() / 1000;
+let uidN = 0;
+/** A fresh id. Date.now() alone repeats when two things are made in the same millisecond. */
+export const uid = (prefix: string) => prefix + Date.now().toString(36) + (uidN++).toString(36);
 export const FR = 190;
 export const MGR_NAMES = ['IVY', 'REX', 'MOSS', 'LUNA', 'KIT', 'JUNO', 'FERN', 'BO', 'SAGE', 'NIX'];
 
@@ -80,15 +70,61 @@ export const FT: Record<FurnKind, { name: string; short: string; desc: string; o
     optsLabel: 'RECAP EVERY',
     opts: ['Every 10 min', 'Every hour', 'Daily digest', 'Only when someone’s stuck'],
   },
+  chamber: {
+    name: 'CHAMBER',
+    short: 'CHAMBER',
+    desc: 'A sealed room for a team and one drive. A preview: the real checks are not built yet.',
+    optsLabel: '',
+    opts: [],
+  },
+  meeting: {
+    name: 'MEETING',
+    short: 'MEETING',
+    desc: 'A round table where teams hand each other typed cards. Every card is checked at the door.',
+    optsLabel: '',
+    opts: [],
+  },
+  drive: {
+    name: 'DRIVE',
+    short: 'DRIVE',
+    desc: 'A sample drive. Simulated.',
+    optsLabel: '',
+    opts: [],
+  },
 };
 export const FT_KEYS: FurnKind[] = ['mcp', 'db', 'books', 'rec'];
+/** The toolbar, in order. The drive is never in it: it only appears when a chamber detects one. */
+export const DOCK_KINDS: FurnKind[] = ['mcp', 'db', 'books', 'rec', 'chamber', 'meeting'];
 /** Dock hover/hold tip copy — separate from the popup description, per the spec's exact wording. */
 export const DOCK_TIP: Record<FurnKind, string> = {
   mcp: 'Plugs the team into your apps: Gmail, Calendar, Drive, your bank.',
   db: 'Something to look things up in: receipts, contacts, records.',
   books: 'Your rules and preferences, so they act the way you would.',
   rec: 'Watches a team and sends you a recap on a schedule.',
+  chamber: 'A sealed room for one team and one drive. Preview only: simulated.',
+  meeting: 'A round table where teams pass checked cards. Preview only: simulated.',
+  drive: 'A sample drive. Simulated.',
 };
 /** Demo time compression for the recorder: index-matched to FT.rec.opts. `null` = event-triggered, not periodic. */
 export const REC_DEMO_SECS: (number | null)[] = [45, 90, 180, null];
 export const REC_LABELS = ['last 10 min', 'last hour', 'today', 'since last check'];
+
+/**
+ * Facility registry seam: one row per FurnKind (see FT above). A new tool type adds an FT entry and,
+ * only if it breaks the defaults, a row here. Default: can sit in a team's quarters (team only) or
+ * outside (shared, wired with plugs).
+ */
+export interface FacilityRule {
+  teamOnly?: boolean;
+  sharedOnly?: boolean;
+  buildScale?: number;
+  /** How far its footprint reaches from its centre: it must stand this far clear of every team's quarters. */
+  pad?: number;
+  /** Said when a drop inside quarters is nudged out. */
+  nudgeMsg?: string;
+}
+export const FACILITY_RULES: Partial<Record<FurnKind, FacilityRule>> = {
+  chamber: { sharedOnly: true, buildScale: 1.2, pad: 50, nudgeMsg: 'Chambers stand on their own.' },
+  meeting: { sharedOnly: true, buildScale: 0.9, pad: 80, nudgeMsg: 'Meeting spaces go outside team quarters' },
+  drive: { sharedOnly: true, pad: 30 },
+};

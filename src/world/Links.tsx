@@ -1,7 +1,27 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function Links({ lines, ghosts, pulses }: { lines: any[]; ghosts: any[]; pulses: any[] }) {
+export function Links({ lines, ghosts, pulses, wires }: { lines: any[]; ghosts: any[]; pulses: any[]; wires?: any[] }) {
   return (
     <>
+      {wires && wires.length > 0 && (
+        <svg width="1" height="1" style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none' }}>
+          {wires.map((w) => (
+            <g key={w.id}>
+              {w.cable ? (
+                <>
+                  {/* A data cable: thicker than a team wire, with a pale core so it reads as a different class. */}
+                  <polyline points={w.pts} fill="none" stroke="#15140f" strokeWidth={9} strokeLinejoin="round" strokeLinecap="round" />
+                  <polyline points={w.pts} fill="none" stroke="#fbfaf5" strokeWidth={3} strokeDasharray="1 7" strokeLinejoin="round" strokeLinecap="round" />
+                </>
+              ) : (
+                <>
+                  <polyline points={w.pts} fill="none" stroke={w.cut ? '#9a998f' : w.color || '#15140f'} strokeOpacity={w.cut ? 0.9 : w.on ? 0.9 : 0.6} strokeWidth={w.on ? 2.6 : 2} strokeDasharray={w.cut ? '5 5' : undefined} strokeLinejoin="round" strokeLinecap="round" />
+                  {w.dot && <circle cx={w.dot[0]} cy={w.dot[1]} r={3} fill={w.cut ? '#9a998f' : w.color || '#15140f'} />}
+                </>
+              )}
+            </g>
+          ))}
+        </svg>
+      )}
       {lines.map((ln, i) => (
         <div
           key={i}
