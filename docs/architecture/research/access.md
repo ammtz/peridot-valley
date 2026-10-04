@@ -21,13 +21,21 @@ Out of scope: building any of it (P33), the VPS provider (P15), the API framewor
 
 ## Options
 
-Criteria: how MFA is enforced and how the API verifies it; monthly USD cost at one person's use; covers the API; covers the valley in the browser; covers SSH to the VPS. Every cell was checked on the page named in it.
+Facts per option: how MFA is enforced and how the API verifies it; monthly USD cost at one person's use; covers the API; covers the valley in the browser; covers SSH to the VPS. Every cell was checked on the page named in it.
 
 | Option | MFA enforced, and how the API verifies it | Cost per month, USD, one user | Covers the API | Covers the valley in the browser | Covers SSH to the VPS |
 |---|---|---|---|---|---|
 | A. Tailscale login via an IdP, API re-checks the tailnet identity | MFA is set at the identity provider (Google, GitHub, Apple, Microsoft, Okta, OneLogin or custom OIDC) and Tailscale uses it at login. Docs: https://tailscale.com/kb/1075/multifactor-auth, read 2026-10-04. The API sits behind `tailscale serve`, which adds a `Tailscale-User-Login` header for tailnet traffic only. The API accepts one allowed login and refuses a request with no header. Docs: https://tailscale.com/kb/1312/serve, read 2026-10-04. The API sees who, not which factor. | 0. Personal plan is $0, up to 6 users. https://tailscale.com/pricing, read 2026-10-04. | Yes | Yes, for a browser on the tailnet. A browser off the tailnet cannot reach the API. | Yes. Tailscale SSH uses tailnet identity, needs no open port, and is on all plans. https://tailscale.com/kb/1193/tailscale-ssh, read 2026-10-04. |
 | B. Cloudflare Tunnel + Access, API verifies the Access JWT | A Require rule on "Authentication Method" checks the MFA method, if the IdP supports it. The check is at login only. Docs: https://developers.cloudflare.com/cloudflare-one/policies/access/, read 2026-10-04. The API verifies the `Cf-Access-Jwt-Assertion` header: signature from the team's certs endpoint, `iss`, and the application `aud` tag. Docs: https://developers.cloudflare.com/cloudflare-one/identity/authorization-cookie/validating-json/, read 2026-10-04. | 0. Free plan is "$0 forever", for teams under 50 users. https://www.cloudflare.com/sase/products/access/, read 2026-10-04. | Yes | Yes, from any browser, with no tailnet needed. Needs a public hostname on Cloudflare, and `cloudflared` makes an outbound-only connection (https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/, read 2026-10-04). | No. Not evaluated here. SSH would stay on Tailscale, so this adds a second system. |
 | C. Direct OIDC in the API (Google ID token, or oauth2-proxy in front) | Google can put an `amr` claim in the ID token, with values such as `mfa`. It appears only when requested and enabled in settings, so the API cannot rely on it. Without it, MFA is an account setting. Docs: https://developers.google.com/identity/openid-connect/openid-connect, read 2026-10-04. The API checks signature (JWKS), `iss`, `aud` and `exp` on each token. Same page. oauth2-proxy supports Google and GitHub as providers: https://oauth2-proxy.github.io/oauth2-proxy/, read 2026-10-04. | 0. Google's OpenID Connect page states no price. oauth2-proxy is open source and runs on the VPS. https://oauth2-proxy.github.io/oauth2-proxy/, read 2026-10-04. | Yes | Yes, from any browser, if the API is reachable from the internet. That breaks "no open ports" unless it sits behind a tunnel. | No |
+
+The five criteria, one row per option:
+
+| Option | Solo maintainer | Low ops | Cheap to run | Swappable parts | Fits Python backend + JS frontend |
+|---|---|---|---|---|---|
+| A. Tailscale + IdP | Yes. One owner account and one IdP login. | Low. One daemon on the VPS and one `tailscale serve` setting. No port to open. | $0 on the Personal plan. | Yes. The API reads one login string. The IdP behind Tailscale can change in the admin console. | Yes. One header read in Python. No auth code in the JS. |
+| B. Cloudflare Tunnel + Access | Yes, but adds a second system beside Tailscale, which SSH still needs. | Medium. `cloudflared`, a hostname, a policy and JWT checks, besides Tailscale. | $0 on the Free plan. | Partly. The JWT check sits in the API and ties it to Cloudflare. | Yes. JWT check in Python. The browser follows Cloudflare's login redirect. |
+| C. Direct OIDC | Yes, but the owner's code holds the sign-in flow. | High. Token checks, sessions, key refresh and an internet-facing API or a tunnel. | $0 in fees, but costs build and upkeep time. | Yes in principle. Any OIDC provider fits, but the code is the owner's to keep. | Yes. Python verifies tokens. JS needs a login flow. |
 
 ## Pick
 
@@ -52,6 +60,7 @@ Every way in:
 | SSH to the VPS | Tailscale SSH, on the tailnet only. No port 22 open to the internet. Check mode can force a fresh sign-in. https://tailscale.com/kb/1193/tailscale-ssh, read 2026-10-04. | Check mode re-runs the IdP sign-in, so MFA is asked again. |
 | Tailscale admin | The admin console signs in through the same IdP. | OAuth at the IdP, with the IdP's MFA. |
 | Git remote | The GitHub account's own 2FA guards sign-in and account settings. Pushes use SSH keys, which 2FA does not change, or a personal access token over HTTPS. https://docs.github.com/en/authentication/securing-your-account-with-two-factor-authentication-2fa/accessing-github-using-two-factor-authentication, read 2026-10-04. | GitHub requires 2FA for code contributors (https://docs.github.com/en/authentication/securing-your-account-with-two-factor-authentication-2fa/about-two-factor-authentication, read 2026-10-04). The push credential itself is a key or token, so keep it passphrase-protected or short-lived. |
+| Laptop worker to API | The worker reaches the API over the tailnet. Serve does not populate the identity headers for traffic from tagged devices (https://tailscale.com/kb/1312/serve, read 2026-10-04), so a tagged laptop would be refused. Option one: keep the laptop an untagged device signed in as the owner, so it gets the header. Option two: the API asks the local Tailscale daemon who the peer is. The LocalAPI can return which node made the request and which user or tags own it (https://tailscale.com/docs/concepts/tailscale-identity, read 2026-10-04). P33 to confirm which one, and test it. | The owner's IdP login on that device, with the IdP's MFA. |
 
 What the browser can and cannot see without login. The static valley loads for anyone. On the deployed site the live feed is off, so a visitor sees only the simulated town. A browser off the tailnet cannot reach the API, so it gets no ledger data. A browser on the tailnet, signed in by the owner, sees live data.
 
@@ -70,7 +79,7 @@ What the browser can and cannot see without login. The static valley loads for a
 - Python backend, JS frontend: the check is one header read in the API, and the frontend needs no auth code.
 - The honest gap: MFA is enforced at the IdP, not by the API. The API cannot prove a factor was used. The owner must turn MFA on at the IdP and keep it on. P33 should write this as a checklist item.
 
-Lines I could not confirm on a primary page: whether `tailscale serve` strips a `Tailscale-User-Login` header sent by a client, and whether the header can be trusted from a local process on the VPS. P33 should test both before relying on the header. With one user and one VPS the local risk is small, but test it.
+Header spoofing. Serve removes the identity headers if it finds them on an incoming request, to avoid spoofing. Its docs also say it is best practice to listen only on localhost, because anyone who can call the service directly could supply their own values (https://tailscale.com/kb/1312/serve, read 2026-10-04). Residual risk: any process on the VPS can call the loopback port with a forged header. So the VPS must run only trusted services.
 
 ## Swap-out path
 
