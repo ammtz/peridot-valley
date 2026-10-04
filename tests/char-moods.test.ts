@@ -36,6 +36,8 @@ test('Flowing', () => {
   a.flowUntil = t + 10;
   a.doing = 'task-1';
   a.backlog = [];
+  a.fear = null;
+  a.blocked = null;
   assert.equal(s.mood(a, t), 'flow');
 });
 
