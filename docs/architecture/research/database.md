@@ -104,8 +104,8 @@ Tasks, property by property. The ledger's task states are todo, doing, verify, d
 | Status = blocked | `task.state` stays at todo or doing. A `task.meta` event with `blocked: <reason>` records the block. The ledger has no blocked state. |
 | Status = done | `task.state` done. |
 | Status = dropped | `task.state` killed, with `reason: dropped`. |
-| Claimed by (for example `claude-code 2026-10-04`) | `task.assign`. Split the text at the first space. The first part, lower-cased, becomes the actor id `l1:<name>`, such as `l1:claude-code`, which fits the actor pattern `role` or `role:name` in `vocab.py`. The owner becomes `you`. The date becomes the event's `at`, set by the migration ingest, which is the one path allowed to supply `at`. |
-| Waiting on | `approval.ask` and `approval.give`. |
+| Claimed by (for example `claude-code dispatch/sonnet 2026-10-04`) | `task.assign`, sent by `l2:migrate`, since only `jev` or `l2` may send it. Split the text at spaces. The first part, lower-cased, becomes the actor id `l1:claude-code`, which fits the `role` or `role:name` pattern in `vocab.py`. The middle part (`dispatch/sonnet`) goes into the optional `reason` field. The date becomes the event's `at`, set by the migration ingest, the one path allowed to supply `at`. A claim by the owner becomes `you`. |
+| Waiting on (values: the owner, Agent, External, Nobody) | The owner: an `approval.ask` with its `what` field, sent by `l2:migrate`, because only `vic`, `jev`, `l2`, `l1` and `l0` may send it. Agent and Nobody: no event, since they follow from the task's state and assignee. External: a `task.meta` field `waiting: external`. `approval.give` is not migrated, because it needs the `seq` of an earlier `approval.ask`. |
 | Type, Due, Where | A new kind `task.meta`. Its `body` holds `type`, `due` and `where`. `task.new` takes only `title`, `estimate_tokens` and `tier`, so these cannot go there. A later change is a new `task.meta` event. |
 | Sprint, Project (relations) | The task's sprint and project ids in `task.meta`. |
 | Comments | `note` events. |
