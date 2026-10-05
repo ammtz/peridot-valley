@@ -63,6 +63,7 @@ Remote: a private GitHub repository.
     blueprints/
     results/
     assets/
+    config/
   data/               (outside the repo, never tracked)
   backups/            (outside the repo)
 ```
@@ -138,7 +139,7 @@ Risk: the git remote backs up tracked files only, so the SQLite log's safety res
 
 ## Swap-out path
 
-To move to Option B: create `/srv/mero/content/`, run `mkdir content && mv specs blueprints results assets config .gitignore content/ && mv .git content/`, so `git status` stays clean. Leave `data/` where it is. Change the API's base paths with one setting. The remote stays as it is.
+To move to Option B: from `/srv/mero/`, run `mkdir content && mv specs blueprints results assets config .gitignore content/ && mv .git content/`, so `git status` stays clean. Leave `data/` where it is. Change the API's base paths with one setting. The remote stays as it is.
 
 To move to another remote (GitLab, Codeberg or a bare repo on a second machine): run `git remote set-url origin <new-url>` and push all branches and tags. Check that the new remote has the same commits (`git log -1` on both). Then delete the old remote. No file in the folder changes.
 
