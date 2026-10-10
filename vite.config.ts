@@ -1,4 +1,5 @@
 import react from '@vitejs/plugin-react'
+import { execSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -42,7 +43,29 @@ function meroEvents(): Plugin {
   }
 }
 
+// P11: every build writes dist/version.json naming the commit it was built from,
+// so the live site says what it serves. Vercel and GitHub Actions hand us the SHA;
+// a local build asks git. No SHA at all fails the build rather than lying.
+function versionJson(): Plugin {
+  return {
+    name: 'version-json',
+    apply: 'build',
+    generateBundle() {
+      const commit =
+        process.env.VERCEL_GIT_COMMIT_SHA ||
+        process.env.GITHUB_SHA ||
+        execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim()
+      if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error(`version.json: not a full commit SHA: ${commit}`)
+      this.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: JSON.stringify({ commit, built: new Date().toISOString() }) + '\n',
+      })
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), meroEvents()],
+  plugins: [react(), meroEvents(), versionJson()],
 })
