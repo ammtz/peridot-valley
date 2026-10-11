@@ -70,6 +70,8 @@ interface Disp {
   y: number;
   wx?: number;
   wy?: number;
+  /** Which way the agent last walked: 1 = right, -1 = left. Picks the side view's facing. */
+  face?: 1 | -1;
 }
 
 // Loosely typed render-output shapes. These mirror the reference `renderVals()`
@@ -2681,6 +2683,7 @@ export class Sim {
         }
         const gap = Math.hypot(tx - d.x, ty - d.y),
           k = 1 - Math.exp(-dt * 7);
+        if (Math.abs(tx - d.x) > 0.3) d.face = tx > d.x ? 1 : -1;
         d.x += (tx - d.x) * k;
         d.y += (ty - d.y) * k;
         d.wx = T.x + d.x;
@@ -2692,29 +2695,51 @@ export class Sim {
           jx = 0,
           rot = 0,
           bsc2 = 1,
+          // Squash and stretch (body scales about its feet).
+          sx = 1,
+          sy = 1,
+          // Pear body: the head is narrower than the old square, so the eyes sit closer and higher.
           eW = 2.4,
           eH = 3.2,
-          eT = 5.6,
-          e1 = 4.2,
-          e2 = 10.4;
-        if (walking) bob = -Math.abs(Math.sin(t * 12 + ph)) * 1.8;
-        else if (md === 'working') bob = Math.sin(t * 7 + ph) * 1.1;
+          eT = 4.6,
+          e1 = 4.6,
+          e2 = 10;
+        // Walking: side view, a fat-duck waddle. The body rocks foot to foot, the belly swings a
+        // beat late, the feet step in turn. One cycle is 0.6 s.
+        const wph = t * 10.5 + ph;
+        let sway = 0,
+          lag = 0,
+          f1: [number, number] = [0, 0],
+          f2: [number, number] = [0, 0];
+        if (walking) {
+          bob = -Math.abs(Math.cos(wph)) * 1.1;
+          sway = Math.sin(wph) * 8;
+          lag = Math.sin(wph - 1.2) * 7;
+          f1 = [Math.sin(wph) * 1.2, -Math.max(0, Math.cos(wph)) * 1.4];
+          f2 = [-Math.sin(wph) * 1.2, -Math.max(0, -Math.cos(wph)) * 1.4];
+        } else if (md === 'working') bob = Math.sin(t * 7 + ph) * 1.1;
         else if (md === 'flow') {
-          bob = -Math.max(0, Math.sin(t * 5 + ph)) * 3.2;
+          // Hop with squash on landing and stretch in the air.
+          const p = Math.sin(t * 5 + ph);
+          bob = -Math.max(0, p) * 3.2;
+          sx = 1 - 0.08 * Math.max(0, p) + 0.12 * Math.max(0, -p);
+          sy = 1 + 0.1 * Math.max(0, p) - 0.15 * Math.max(0, -p);
           eH = 1.3;
-          eT = 6.6;
+          eT = 5.6;
         } else if (md === 'overwhelmed') {
           jx = Math.sin(t * 38 + ph) * 0.7;
           eW = 3;
           eH = 4;
-          eT = 4.6;
-          e1 = 3.4;
-          e2 = 10.2;
+          eT = 3.8;
+          e1 = 4;
+          e2 = 10;
         } else if (md === 'bored') {
-          bob = Math.sin(t * 1.1 + ph) * 1.2;
-          rot = Math.sin(t * 0.9 + ph) * 7;
+          // Melts down and back up, slowly.
+          const m = (Math.sin(t * 1.6 + ph) + 1) / 2;
+          sx = 1 + 0.15 * m;
+          sy = 1 - 0.2 * m;
           eH = 1.1;
-          eT = 8.2;
+          eT = 7.2;
         } else if (md === 'frustrated') {
           const c = (((t + ph) % 2.6) + 2.6) % 2.6;
           if (c < 0.35) {
@@ -2722,7 +2747,7 @@ export class Sim {
             bob = -1.5;
           }
           eH = 2;
-          eT = 7;
+          eT = 6;
         } else if (md === 'stalled') {
           jx = Math.sin(t * 22 + ph) * 0.35;
           rot = -5;
@@ -2747,14 +2772,22 @@ export class Sim {
             rot = Math.sin(ce * 18) * 10 * fade;
             bsc2 = 1 + 0.12 * Math.abs(Math.sin(ce * 9)) * fade;
             eH = 3.6;
-            eT = 5.2;
+            eT = 4.2;
           }
           // A warm colour pop, easing back to ink. (No rainbow.)
           const pop = this.reducedMotion ? 1 : 0.85 + 0.15 * Math.sin(ce * 9);
           bodyBg = 'hsl(' + (38 - (1 - pop) * 10).toFixed(0) + ' ' + (fade * 92).toFixed(0) + '% ' + (62 - (1 - fade) * 54).toFixed(0) + '%)';
         }
         // U15/T6: prefers-reduced-motion stops the bob, the pulse and the aura.
-        if (this.reducedMotion) bob = 0;
+        if (this.reducedMotion) {
+          bob = 0;
+          sway = 0;
+          lag = 0;
+          f1 = [0, 0];
+          f2 = [0, 0];
+          sx = 1;
+          sy = 1;
+        }
         const blink = ((t * 0.9 + ph * 1.37) % 4.3) < 0.13;
         if (blink && md !== 'bored' && md !== 'flow') {
           eT += (eH - 0.8) / 2;
@@ -2784,6 +2817,14 @@ export class Sim {
           bodyL: 9.5 + jx,
           rot,
           bsc: bsc2,
+          sx,
+          sy,
+          walk: walking,
+          face: d.face ?? 1,
+          sway,
+          lag,
+          f1,
+          f2,
           ringT: 4 + bob,
           dotT: 1 + bob,
           nameT: 30 + bob,

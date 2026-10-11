@@ -32,4 +32,12 @@ input {
 .vic-thinking span:nth-child(2) { animation-delay: 0.2s; }
 .vic-thinking span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes dot { 50% { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .wake-hint, .vic-note, .vic-thinking span { animation: none; opacity: 1; } }
+
+/* Agent emanata (2026-10-11, design system Agent): swamped paper stack wobbles, bored z's drift up. */
+.pv-papers { pointer-events: none; transform-origin: 50% 100%; animation: pvWob 0.35s ease-in-out infinite alternate; }
+.pv-papers i { display: block; height: 2.4px; margin-top: -0.8px; background: #fbfaf5; border: 0.8px solid #15140f; border-radius: 0.5px; }
+@keyframes pvWob { to { transform: rotate(6deg); } }
+.pv-z { position: absolute; pointer-events: none; font-size: 5px; font-weight: 800; line-height: 1; color: #6b6a62; animation: pvRise 2.4s ease-out infinite; }
+.pv-z2 { font-size: 4px; animation-delay: 1.2s; }
+@keyframes pvRise { 0% { transform: translateY(0); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(-9px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .wake-hint, .vic-note, .vic-thinking span, .pv-papers, .pv-z { animation: none; opacity: 1; } }
