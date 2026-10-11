@@ -31,16 +31,19 @@ Owner: Andres. Board: Linear workspace `peri-doto`, team PER.
 - Commit under your own agent name. Never as the owner.
 - Never weaken or delete a test to pass.
 - Open the PR yourself. PR title starts with the issue ID.
-- PR body has exactly these three lines:
-  - `**What changed:**` one or two sentences.
-  - `**How verified:**` commands run, results.
-  - `**Needs your decision:**` one question, or `none`.
+- PR body follows `.github/pull_request_template.md`:
+  - **Summary:** smallest visual. Diff sketch, tree, pseudocode.
+  - **Evidence:** before and after. Test output or screenshot.
+  - **Merge Danger:** door (one-way or two-way), blast radius.
+  - **Needs your decision:** one question, or `none`.
+- The PR format check fails bodies that skip a part.
 - Comment the PR link on the issue.
 
 ## Review and merge
 
 - Only Nightcrawler merges. Nightly, about 1:50am ET.
-- It merges small PRs that pass every check.
+- It merges small two-way-door PRs that pass every check.
+- One-way doors always go to Andres.
 - It sends money, secrets, budgets, schema work to Andres.
 - Done means merged with checks green. Not "pushed".
 
