@@ -4,6 +4,7 @@ import { Links } from './Links';
 import { Furniture } from './Furniture';
 import { Room } from './Room';
 import { Manager } from './Manager';
+import { PearBody } from './AgentBody';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function World({ sim, rv }: { sim: Sim; rv: any }) {
@@ -74,13 +75,17 @@ export function World({ sim, rv }: { sim: Sim; rv: any }) {
         ))}
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         {rv.walkers.map((w: any, i: number) => (
-          <div key={i} style={{ position: 'absolute', left: w.x - 6, top: w.y - 6, width: 12, height: 12, borderRadius: 4, background: '#15140f', zIndex: 60, pointerEvents: 'none' }} />
+          <div key={i} style={{ position: 'absolute', left: w.x - 6, top: w.y - 6, width: 12, height: 12, zIndex: 60, pointerEvents: 'none' }}>
+            <PearBody size={12} />
+          </div>
         ))}
         {rv.hasDragAg && (
           <div style={{ position: 'absolute', left: rv.dragAg.x, top: rv.dragAg.y, width: 0, height: 0, zIndex: 100, pointerEvents: 'none' }}>
-            <div style={{ position: 'absolute', left: -12, top: -12, width: 24, height: 24, borderRadius: 7, background: '#15140f', boxShadow: '0 10px 14px rgba(21,20,15,.22)', transform: `rotate(${rv.dragAg.rot}deg)` }}>
-              <div style={{ position: 'absolute', left: 6, top: 8, width: 3, height: 5, borderRadius: 1, background: '#f4f3ee' }} />
-              <div style={{ position: 'absolute', left: 15, top: 8, width: 3, height: 5, borderRadius: 1, background: '#f4f3ee' }} />
+            {/* Picked up: dangles from above, eyes wide. */}
+            <div style={{ position: 'absolute', left: -12, top: -12, width: 24, height: 24, filter: 'drop-shadow(0 10px 7px rgba(21,20,15,.22))', transformOrigin: '50% -20%', transform: `rotate(${rv.dragAg.rot}deg)` }}>
+              <PearBody size={24} />
+              <div style={{ position: 'absolute', left: 6.2, top: 5.6, width: 4, height: 5.4, borderRadius: 1.2, background: '#f4f3ee' }} />
+              <div style={{ position: 'absolute', left: 13.8, top: 5.6, width: 4, height: 5.4, borderRadius: 1.2, background: '#f4f3ee' }} />
             </div>
             <div style={{ position: 'absolute', left: 18, top: 14, whiteSpace: 'nowrap', fontSize: 10, fontWeight: 800, letterSpacing: '.08em', background: '#15140f', color: '#f4f3ee', padding: '3px 7px', borderRadius: 6 }}>
               {rv.dragAg.name} <span style={{ fontWeight: 500, opacity: 0.75 }}>{rv.dragAg.target}</span>

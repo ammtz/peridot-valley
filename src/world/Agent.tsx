@@ -1,4 +1,5 @@
 import type React from 'react';
+import { PearBody, SideBody } from './AgentBody';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function Agent({ a }: { a: any }) {
@@ -48,16 +49,22 @@ export function Agent({ a }: { a: any }) {
       {a.celeb && (
         <>
           {/* Two small hands outside the square, raised and waving */}
-          <span style={{ position: 'absolute', left: a.bodyL - 5, top: a.bodyT - 7 - a.handsUp * 1.5, width: 4, height: 7, borderRadius: 2, background: a.bodyBg, border: '1.3px solid #15140f', transform: `rotate(${-18 + a.handsUp * 10}deg)` }} />
-          <span style={{ position: 'absolute', left: a.bodyL + 18, top: a.bodyT - 7 - a.handsUp * 1.5, width: 4, height: 7, borderRadius: 2, background: a.bodyBg, border: '1.3px solid #15140f', transform: `rotate(${18 - a.handsUp * 10}deg)` }} />
+          <span style={{ position: 'absolute', left: a.bodyL - 3.5, top: a.bodyT - 6 - a.handsUp * 1.5, width: 4, height: 7, borderRadius: 2, background: a.bodyBg, border: '1.3px solid #15140f', transform: `rotate(${-18 + a.handsUp * 10}deg)` }} />
+          <span style={{ position: 'absolute', left: a.bodyL + 16.5, top: a.bodyT - 6 - a.handsUp * 1.5, width: 4, height: 7, borderRadius: 2, background: a.bodyBg, border: '1.3px solid #15140f', transform: `rotate(${18 - a.handsUp * 10}deg)` }} />
         </>
       )}
-      <div style={{ position: 'absolute', left: a.bodyL, top: a.bodyT, width: 17, height: 17, borderRadius: 5, background: a.bodyBg, boxShadow: '0 2px 0 rgba(21,20,15,.16)', transform: `rotate(${a.rot}deg) scale(${a.bsc})` }}>
+      {a.walk ? (
+        <div style={{ position: 'absolute', left: a.bodyL, top: a.bodyT, width: 17, height: 17, filter: 'drop-shadow(0 2px 0 rgba(21,20,15,.16))', transform: `scaleX(${a.face})` }}>
+          <SideBody fill={a.bodyBg} sway={a.sway} lag={a.lag} f1={a.f1} f2={a.f2} eyeH={a.eH > 1 ? 4.2 : 0.8} />
+        </div>
+      ) : (
+      <div style={{ position: 'absolute', left: a.bodyL, top: a.bodyT, width: 17, height: 17, filter: 'drop-shadow(0 2px 0 rgba(21,20,15,.16))', transformOrigin: '50% 100%', transform: `rotate(${a.rot}deg) scale(${a.sx * a.bsc}, ${a.sy * a.bsc})` }}>
+        <PearBody fill={a.bodyBg} />
         {a.celeb ? (
           <>
             {/* Happy half-closed eyes, an upside-down U on each: n n */}
-            <div style={{ position: 'absolute', left: 2.4, top: 6, width: 4.6, height: 3.2, borderRadius: '4px 4px 0 0', border: '1.7px solid #15140f', borderBottom: 'none' }} />
-            <div style={{ position: 'absolute', left: 10, top: 6, width: 4.6, height: 3.2, borderRadius: '4px 4px 0 0', border: '1.7px solid #15140f', borderBottom: 'none' }} />
+            <div style={{ position: 'absolute', left: 2.8, top: 5, width: 4.6, height: 3.2, borderRadius: '4px 4px 0 0', border: '1.7px solid #15140f', borderBottom: 'none' }} />
+            <div style={{ position: 'absolute', left: 9.6, top: 5, width: 4.6, height: 3.2, borderRadius: '4px 4px 0 0', border: '1.7px solid #15140f', borderBottom: 'none' }} />
           </>
         ) : (
           <>
@@ -72,9 +79,21 @@ export function Agent({ a }: { a: any }) {
           </>
         )}
         {a.isOver && (
-          <div style={{ position: 'absolute', left: 15, top: a.swT, width: 3.5, height: 3.5, borderRadius: '0 50% 50% 50%', background: '#fbfaf5', border: '1px solid #15140f', transform: 'rotate(45deg)', opacity: a.swO }} />
+          <div style={{ position: 'absolute', left: -2.5, top: a.swT, width: 3.5, height: 3.5, borderRadius: '0 50% 50% 50%', background: '#fbfaf5', border: '1px solid #15140f', transform: 'rotate(45deg)', opacity: a.swO }} />
         )}
       </div>
+      )}
+      {a.isOver && !a.walk && (
+        <div className="pv-papers" style={{ position: 'absolute', left: a.bodyL + 18, top: a.bodyT - 1, width: 8 }}>
+          <i /><i /><i />
+        </div>
+      )}
+      {a.isBored && !a.walk && (
+        <>
+          <span className="pv-z" style={{ left: a.bodyL + 18, top: a.bodyT + 4 }}>z</span>
+          <span className="pv-z pv-z2" style={{ left: a.bodyL + 21, top: a.bodyT + 6 }}>z</span>
+        </>
+      )}
       {a.showName && (
         <div style={{ position: 'absolute', left: '50%', top: a.nameT, transform: 'translateX(-50%)', fontSize: a.labelSize, fontWeight: 700, letterSpacing: '.08em', color: '#6b6a62', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
           {a.name}
