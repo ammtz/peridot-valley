@@ -84,6 +84,16 @@ npm run preview   # serve the build locally
 ```
 
 Deploy: import to Vercel, pick the **Vite** preset, deploy.
+Every build writes `dist/version.json` with the commit it was built from, so
+[/version.json](https://peridot-valley.vercel.app/version.json) says what's live.
+
+## Rollback
+
+Production back to the previous production deployment (needs `vercel login` or `VERCEL_TOKEN`):
+
+```bash
+npx vercel rollback
+```
 
 ## Architecture
 
