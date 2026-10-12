@@ -31,10 +31,9 @@ Owner: Andres. Board: Linear workspace `peri-doto`, team PER.
 - Commit under your own agent name. Never as the owner.
 - Never weaken or delete a test to pass.
 - Open the PR yourself. PR title starts with the issue ID.
-- PR body has exactly these three lines:
-  - `**What changed:**` one or two sentences.
-  - `**How verified:**` commands run, results.
-  - `**Needs your decision:**` one question, or `none`.
+- PR body follows `.github/pull_request_template.md`: PER ID, `## Summary`, `## Evidence`,
+  `## Merge Danger` with `**Door:**`, `**Blast radius:**` and `**Needs your decision:**`.
+  The `PR format` check fails anything else. Full guide: the `pr` skill in ammtz/skills.
 - Comment the PR link on the issue.
 
 ## Review and merge
