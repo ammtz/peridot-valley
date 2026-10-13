@@ -20,9 +20,17 @@ Owner: Andres. Board: Linear workspace `peri-doto`, team PER.
 
 ## Stop and ask
 
-- Stuck, or a decision is needed? Stop.
-- Comment on the issue: what you tried, one question.
-- Add the `needs-you` label. Do not guess.
+- Stuck, or a decision is needed? Stop. Do not guess.
+- Comment on the issue: what you tried.
+- Add the `needs-you` label. Put an `## Ask` block at the top of the issue body:
+  - `**Q:**` one question. Yes/no or A/B.
+  - `**Context:**` one line. Assume the owner has zero context.
+  - `**Rec:**` your answer, plus one line why.
+  - `**Review:**` link to the PR or doc, or `none`.
+  - `**If silent:**` what happens if nobody answers.
+- Done and waiting on sign-off? Same block. Q: "Move to Done?"
+- One Ask per issue. Answered: remove the label, note the answer under the block.
+- Closed issues never carry `needs-you`.
 - Always ask before touching: money, secrets, data schema, deletes.
 
 ## Branch, commit, PR
